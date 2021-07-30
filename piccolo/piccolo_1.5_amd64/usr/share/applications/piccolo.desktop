@@ -1,0 +1,12 @@
+
+[Desktop Entry]
+Name=Piccolo
+Version=1.0
+Comment=Very small text editor
+Exec=/usr/local/bin/piccolo
+Terminal=false
+Icon=/usr/share/icons/ICONFILENAME
+Type=Application
+Categories=Utility;
+
+Name[en_US]=piccolo

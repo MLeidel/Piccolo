@@ -1,0 +1,8 @@
+
+Package: piccolo
+Version: 1.5
+Architecture: amd64
+Priority: optional
+Maintainer: Michael Leidel <mike.leidel@gmail.com>
+Description: ver simple GUI text editor
+	that remembers its window position.
