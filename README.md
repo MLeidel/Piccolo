@@ -1,7 +1,7 @@
 
 # Piccolo
 
-### Linux Debian (gtk) Small Text Editor
+### Linux Small Text Editor
 
 Piccolo is a very minimal text editor intended for
 applications requiring a simple display of monospaced
