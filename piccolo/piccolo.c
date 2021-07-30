@@ -547,8 +547,11 @@ int main(int argc, char *argv[]) {
 }
 
 
-// callback functions for GtkWidget events
-
+void save_last_file() {
+    fh = open_for_write(last_file);
+    fprintf(fh, "%s", fbuf);
+    fclose(fh);
+}
 
 // called when window is closed
 void on_window1_delete_event() {
@@ -588,6 +591,7 @@ void on_mu_new_activate() {
     fc_action = 2;
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(g_txbuf), "", -1);
     gtk_window_set_title(GTK_WINDOW(g_window), "Piccolo");
+    strcpy(tbuf, fbuf);
 }
 
 
@@ -646,10 +650,7 @@ void on_mu_save_activate() {
     g_free(text);
     gtk_text_buffer_set_modified (buffer , FALSE);
     modified = 0;
-    // save for last file re-open
-    fh = open_for_write(last_file);
-    fprintf(fh, "%s", fbuf);
-    fclose(fh);
+    save_last_file();
 }
 
 
@@ -658,12 +659,14 @@ void on_btn_fc_ok_clicked() {
 
     strcpy(fbuf, gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(g_fc_dlg)));
 
-    gtk_window_set_title(GTK_WINDOW(g_window), fbuf);
-
     if (fbuf == NULL) {
         gtk_widget_hide(g_fc_dlg);  // user cancelled filechooser
         return;
     }
+
+    gtk_window_set_title(GTK_WINDOW(g_window), fbuf);
+    strcpy(tbuf, fbuf);
+
     if (fc_action == 0) {
         // read the file and insert it into the textview
         fh = open_for_read(fbuf);
@@ -682,6 +685,7 @@ void on_btn_fc_ok_clicked() {
         // get text from textview and save it to a file
         on_mu_save_activate();
     }
+    save_last_file();
     gtk_widget_hide(g_fc_dlg);
 }
 
