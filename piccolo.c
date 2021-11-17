@@ -30,9 +30,10 @@ char* glade_xml = "\
 <property name=\"version\">1.5</property>\n\
 <property name=\"comments\" translatable=\"yes\">Piccolo is a very light weight\n\
 and limited text editor</property>\n\
-<property name=\"website\">https://github.com/MLeidel</property>\n\
+<property name=\"website\">https://github.com/MLeidel/Piccolo</property>\n\
+<property name=\"website_label\" translatable=\"yes\">Website and Hot Keys</property>\n\
 <property name=\"authors\">Michael Leidel</property>\n\
-<property name=\"logo_icon_name\">face-glasses</property>\n\
+<property name=\"logo_icon_name\">accessories-text-editor</property>\n\
 <property name=\"license_type\">gpl-2-0</property>\n\
 <signal name=\"delete-event\" handler=\"on_dlg_about_delete_event\" swapped=\"no\"/>\n\
 <signal name=\"response\" handler=\"on_dlg_about_response\" swapped=\"no\"/>\n\
