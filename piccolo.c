@@ -339,6 +339,28 @@ and limited text editor</property>\n\
 </object>\n\
 </child>\n\
 <child>\n\
+<object class=\"GtkImageMenuItem\" id=\"mu_find\">\n\
+<property name=\"label\">gtk-find</property>\n\
+<property name=\"visible\">True</property>\n\
+<property name=\"can_focus\">False</property>\n\
+<property name=\"use_underline\">True</property>\n\
+<property name=\"use_stock\">True</property>\n\
+<signal name=\"activate\" handler=\"on_mu_find_activate\" swapped=\"no\"/>\n\
+<accelerator key=\"F2\" signal=\"activate\"/>\n\
+</object>\n\
+</child>\n\
+<child>\n\
+<object class=\"GtkImageMenuItem\" id=\"mu_next\">\n\
+<property name=\"label\">Find Next</property>\n\
+<property name=\"visible\">True</property>\n\
+<property name=\"can_focus\">False</property>\n\
+<property name=\"use_underline\">True</property>\n\
+<property name=\"use_stock\">False</property>\n\
+<signal name=\"activate\" handler=\"on_mu_next_activate\" swapped=\"no\"/>\n\
+<accelerator key=\"F3\" signal=\"activate\"/>\n\
+</object>\n\
+</child>\n\
+<child>\n\
 <object class=\"GtkSeparatorMenuItem\">\n\
 <property name=\"visible\">True</property>\n\
 <property name=\"can_focus\">False</property>\n\
@@ -769,6 +791,15 @@ void on_btn_search_cancel_clicked() {
     gtk_widget_hide (g_dlg_search);
 }
 
+void on_mu_find_activate() {
+  gtk_widget_show_all(g_dlg_search);
+  gtk_dialog_run(GTK_DIALOG(g_dlg_search));
+}
+
+void on_mu_next_activate() {
+  search();
+}
+
 _Bool on_window1_key_press_event(GtkWidget *w, GdkEvent *e) {
     guint keyval;
     guint state;
@@ -798,8 +829,7 @@ _Bool on_window1_key_press_event(GtkWidget *w, GdkEvent *e) {
 
     //if ((state & GDK_CONTROL_MASK) == GDK_CONTROL_MASK && keyval == GDK_KEY_f) {
     if (keyval == GDK_KEY_F2) {
-        gtk_widget_show_all(g_dlg_search);
-        gtk_dialog_run(GTK_DIALOG(g_dlg_search));
+        on_mu_find_activate();
         return TRUE;
     }
 
