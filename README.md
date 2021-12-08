@@ -1,7 +1,7 @@
 
 # Piccolo
 
-### Linux Small Text Editor
+### Small Text Editor for Linux GTK3
 
 Piccolo is a very minimal text editor intended for
 applications requiring a simple display of monospaced
