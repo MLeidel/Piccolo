@@ -187,12 +187,6 @@
                       </object>
                     </child>
                     <child>
-                      <object class="GtkSeparatorMenuItem">
-                        <property name="visible">True</property>
-                        <property name="can_focus">False</property>
-                      </object>
-                    </child>
-                    <child>
                       <object class="GtkImageMenuItem" id="mu_quit">
                         <property name="label">gtk-quit</property>
                         <property name="visible">True</property>
@@ -201,6 +195,12 @@
                         <property name="use_stock">True</property>
                         <signal name="activate" handler="on_mu_quit_activate" swapped="no"/>
                         <accelerator key="q" signal="activate" modifiers="GDK_CONTROL_MASK"/>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkSeparatorMenuItem">
+                        <property name="visible">True</property>
+                        <property name="can_focus">False</property>
                       </object>
                     </child>
                   </object>
@@ -258,7 +258,9 @@
                 <property name="top_margin">4</property>
                 <property name="bottom_margin">4</property>
                 <property name="buffer">textbuff</property>
-                <property name="monospace">True</property>
+                <style>
+                  <class name="txtv"/>
+                </style>
               </object>
             </child>
           </object>
@@ -271,5 +273,8 @@
         </child>
       </object>
     </child>
+    <style>
+      <class name="txtv"/>
+    </style>
   </object>
 </interface>

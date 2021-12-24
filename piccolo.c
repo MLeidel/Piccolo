@@ -13,7 +13,9 @@
 
 */
 #include <gtk/gtk.h>
+#include <gdk/gdk.h>
 #include "myclib.h"
+#include "gtkcss.h"
 
 #define GDK_KEY_F2 0xffbf
 #define GDK_KEY_F3 0xffc0
@@ -433,6 +435,7 @@ and limited text editor</property>\n\
 <property name=\"bottom_margin\">4</property>\n\
 <property name=\"buffer\">textbuff</property>\n\
 <property name=\"monospace\">True</property>\n\
+<style><class name=\"txtv\"/></style>\n\
 </object>\n\
 </child>\n\
 </object>\n\
@@ -565,9 +568,14 @@ int main(int argc, char *argv[]) {
       modified = 0;
     }
 
+    apply_css_text(".txtv {font: bold 11pt 'Andale Mono';}");  // from gtkcss.h
+
     gtk_main();
     return 0;
 }
+
+
+
 
 
 void save_last_file() {
