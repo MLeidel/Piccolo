@@ -1,30 +1,37 @@
-#ifndef MYCLIB
-#define MYCLIB
-/* myclib.h
-
+#ifndef MYC
+#define MYC
+/* myc.h
+FUNCTIONS:
+array_of_strings aos_allocate(int col, int len)
 bool endswith(char* item, char* compr)
 bool equals(char *str1, char *str2)
 bool equalsIgnoreCase(char *str1, char *str2)
+bool file_exists (char *filename)
 bool startswith(char* item, char* compr)
 char *lowercase(char *str)
 char *ltrim(char *)
 char *removen(char *line)  // replaces ending new-line char with '\0'
-char *replace (char *a, const char *b, const char *c, int start, int number)
+char *replace (char *a, const char *b, const char *c, int start, int number) uses MAX_L
 char *rtrim(char *)
 char *strrev(char *str)
-char *substr(char *string, int position, int length)
+char *substr(char *string, int position, int length) uses MAX_L
 char *today(char* buf)  // returns string of "YYYY/MM/DD" todays date
 char *trim(char *s)
 char *uppercase(char *str)
-int fields(char *str, char *delim)  // char _fields[MAX_C][MAX_L];
+char* urlencode(char* originalText) uses MAX_L
+int aos_fields(array_of_strings aos, char *str, char *delim)
 int indexof (char* base, char* str)
 int lastindexof (char* base, char* str)
 FILE * open_for_append(char *fname)  // returns FILE handler or stops with error
 FILE * open_for_read(char *fname)
 FILE * open_for_write(char *fname)
+void aos_cleanup(array_of_strings aos)
+void aos_display(array_of_strings aos)
 void readfile(char *buffer, const char *filename)
+------- Helpfull c lang functions -------
+char *realpath(const char *restrict path,
+               char *restrict resolved_path);
 */
-
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -32,11 +39,10 @@ void readfile(char *buffer, const char *filename)
 #include <string.h>
 #include <time.h>
 #include <stdbool.h>
-#include <sys/stat.h>   // stat
+#include <sys/stat.h>
 
-
-#define MAX_C 128   // used for array length or smaller string
-#define MAX_L 4096  // used for string lengths
+#define MAX_L 4096  // used for default string lengths **
+#define ARRSIZE(x)  (sizeof(x) / sizeof((x)[0]))  // find len of an array
 
 char *strrev(char *str) {
     int i=0, j=0;
@@ -107,19 +113,63 @@ char *replace (char *a, const char *b, const char *c, int start, int number) {
     return a;
 }
 
-// Split a delimited string into fields
-char _fields[MAX_C][MAX_L];
+/* For a 2d array of strings
 
-int fields(char *str, char *delim) {
-    int _fields_count = 0;
+  Example:
+
+    char line[100] = "Michael, David, leidel, CEO,cool";
+
+    array_of_strings in = aos_allocate(5, 64);
+    aos_fields(in, line, ",");
+    aos_display(in);
+    aos_cleanup(in);
+*/
+
+typedef struct aos {
+    int max_row;    // max lenght of a field
+    int max_col;    // number of fields
+    char ** fields; // array of fields (char arrays or strings)
+} array_of_strings;
+
+array_of_strings aos_allocate(int col, int len) {
+    /*  initialize variables and allocate memory to an
+        array_of_strings struct */
+    array_of_strings aos;
+    aos.max_row = len;
+    aos.max_col = col;
+    aos.fields = malloc(aos.max_col * sizeof(char*));
+    for(int x=0; x < aos.max_col; x++) {
+        aos.fields[x] = malloc(aos.max_row * sizeof(char));
+    }
+    return aos;
+}
+
+int aos_fields(array_of_strings aos, char *str, char *delim) {
+    int finx = 0;
     char* token = strtok(str, delim);
-    //strcpy(_fields[_fields_count++], token);
     while (token != NULL) {
-        strcpy(_fields[_fields_count++], token);
+        strcpy(aos.fields[finx++], trim(token));
         token = strtok(NULL, delim);
     }
-    return _fields_count;
+    return finx;
 }
+
+void aos_display(array_of_strings aos) {
+    int x;
+    for(x=0; x < aos.max_col; x++) {
+        printf("%s\n", aos.fields[x]);
+    }
+}
+
+void aos_cleanup(array_of_strings aos) {
+    /* free each column's data then free the column pointer's */
+    for(int col=0; col < aos.max_col; col++) {
+        free(aos.fields[col]);
+    }
+    free(aos.fields);
+}
+
+/*******************************************/
 
 bool file_exists (char *filename) {
   struct stat   buffer;
@@ -221,7 +271,17 @@ int indexOf_shift (char* base, char* str, int startIndex) {
 }
 
 int indexof (char* base, char* str) {
+    // indexof(haystack, needle);
+    // find index of substring in a string
     return indexOf_shift(base, str, 0);
+}
+
+int charinx(char* base, char c) {
+    // indexof(haystack, needle);
+    // find index of a character in a string
+    char ctos[2] = {'\0'};
+    ctos[0] = c;
+    return indexof(base, ctos);
 }
 
 int lastindexof (char* base, char* str) {
@@ -269,18 +329,16 @@ int lastindexof (char* base, char* str) {
 
 
 char *substr(char *string, int position, int length) {
-   char *p;
+   static char p[MAX_L] = {"\0"};
    int c;
-
-   p = malloc(length+2);
 
    if (p == NULL) {
       printf("Unable to allocate memory.\n");
       exit(1);
    }
 
-   for (c = 0; c <= length; c++) {
-      *(p+c) = *(string+position-1);
+   for (c = 0; c < length; c++) {
+      *(p+c) = *(string+position);
       string++;
    }
 
@@ -345,6 +403,28 @@ int is_arg(int ac, char **argv, char *arg) {
         }
     }
     return 0;  // arg not present
+}
+
+char* urlencode(char* originalText)
+{
+    static char encodedText[MAX_L] = {"\0"};
+
+    char *hex = "0123456789abcdef";
+
+    int pos = 0;
+    for (int i = 0; i < strlen(originalText); i++) {
+        if (('a' <= originalText[i] && originalText[i] <= 'z')
+            || ('A' <= originalText[i] && originalText[i] <= 'Z')
+            || ('0' <= originalText[i] && originalText[i] <= '9')) {
+                encodedText[pos++] = originalText[i];
+            } else {
+                encodedText[pos++] = '%';
+                encodedText[pos++] = hex[originalText[i] >> 4];
+                encodedText[pos++] = hex[originalText[i] & 15];
+            }
+    }
+    encodedText[pos] = '\0';
+    return encodedText;
 }
 
 #endif

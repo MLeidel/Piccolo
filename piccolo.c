@@ -14,7 +14,7 @@
 */
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
-#include "myclib.h"
+#include "myc.h"
 #include "gtkcss.h"
 
 #define GDK_KEY_F2 0xffbf
@@ -525,11 +525,14 @@ int main(int argc, char *argv[]) {
     fgets(line, 64, fh);
     fclose(fh);
     removen(line);  // remove new line character
-    fields(line, ",");
-    w_left      = atol(_fields[0]);
-    w_top       = atol(_fields[1]);
-    w_width     = atol(_fields[2]);
-    w_height    = atol(_fields[3]);
+    // parse out the values
+    array_of_strings in = aos_allocate(4, 16);
+    aos_fields(in, line, ",");
+    w_left      = atol(in.fields[0]);
+    w_top       = atol(in.fields[1]);
+    w_width     = atol(in.fields[2]);
+    w_height    = atol(in.fields[3]);
+    aos_cleanup(in);
 
     gtk_widget_show(window1);
     gtk_window_move(GTK_WINDOW(window1), w_left, w_top);  // set metrics ...
@@ -539,7 +542,7 @@ int main(int argc, char *argv[]) {
 
     if (argc > 1) {  // load file from command line
         //strcpy(fbuf, argv[1]);
-        realpath(argv[1], fbuf);
+        realpath(argv[1], fbuf);  // for full path
     } else {
         if (file_exists(last_file)) {
             fh = open_for_read(last_file);
