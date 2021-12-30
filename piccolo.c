@@ -477,6 +477,8 @@ GtkTextIter start, end;
 gboolean first = TRUE;
 gchar sea_target[128] = {0};
 
+PangoTabArray   *ptaNameList;  // needed to set new tab stops
+
 
 /*
  ___  ___       ___       __   __   __
@@ -572,6 +574,11 @@ int main(int argc, char *argv[]) {
     }
 
     apply_css_text(".txtv {font: bold 11pt 'Andale Mono';}");  // from gtkcss.h
+
+    // Set new TAB stops (values are in pixils)
+    ptaNameList = pango_tab_array_new_with_positions(2, TRUE,
+                PANGO_TAB_LEFT, 36, PANGO_TAB_LEFT, 72);
+    gtk_text_view_set_tabs(GTK_TEXT_VIEW(g_tview), ptaNameList);
 
     gtk_main();
     return 0;
