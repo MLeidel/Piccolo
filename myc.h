@@ -1,38 +1,50 @@
 #ifndef MYC
 #define MYC
 /* myc.h
-FUNCTIONS:
-array_of_strings aos_allocate(int col, int len)
-bool endswith(char* item, char* compr)
+
+STRING FUNCTIONS
+bool endswith (char* base, char* str)
 bool equals(char *str1, char *str2)
-bool equalsIgnoreCase(char *str1, char *str2)
-bool file_exists (char *filename)
-bool startswith(char* item, char* compr)
+bool equalsignorecase(char *str1, char *str2)
+bool startswith (char* base, char* str)
+char * replace (char *a, const char *b, const char *c, int start, int number)
 char *lowercase(char *str)
-char *ltrim(char *)
-char *removen(char *line)  // replaces ending new-line char with '\0'
-char *replace (char *a, const char *b, const char *c, int start, int number) uses MAX_L
-char *rtrim(char *)
+char *ltrim(char *s)
+char *rtrim(char *s)
 char *strrev(char *str)
-char *substr(char *string, int position, int length) uses MAX_L
-char *today(char* buf)  // returns string of "YYYY/MM/DD" todays date
+char *substr(char *string, int position, int length)
 char *trim(char *s)
 char *uppercase(char *str)
-char* urlencode(char* originalText) uses MAX_L
-int aos_fields(array_of_strings aos, char *str, char *delim)
+char* removen(char *line)   // see also rtrim()
+char* urlencode(char* originalText)
+int charinx(char* base, char c)
 int indexof (char* base, char* str)
 int lastindexof (char* base, char* str)
-FILE * open_for_append(char *fname)  // returns FILE handler or stops with error
-FILE * open_for_read(char *fname)
-FILE * open_for_write(char *fname)
+
+ARRAY FUNCTIONS
+array_of_strings aos_allocate(int col, int len)
+int aos_fields(array_of_strings aos, char *str, char *delim)
 void aos_cleanup(array_of_strings aos)
 void aos_display(array_of_strings aos)
+
+FILE & PATH FUNCTIONS
+bool file_exists (char *filename)
+FILE * open_for_append(char *fname)
+FILE * open_for_read(char *fname)
+FILE * open_for_write(char *fname)
 void readfile(char *buffer, const char *filename)
-------- Helpfull c lang functions -------
-char *realpath(const char *restrict path,
-               char *restrict resolved_path);
+
+DATE FUNCTIONS
+char* today()
+
+OTHER FUNCTIONS
+int is_arg(int ac, char **argv, char *arg)
+-----------------------------------------
+--------- Helpfull gcc functions --------
+char *realpath(const char *restrict path, char *restrict resolved_path);
 */
 
+#include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -44,13 +56,13 @@ char *realpath(const char *restrict path,
 #define MAX_L 4096  // used for default string lengths **
 #define ARRSIZE(x)  (sizeof(x) / sizeof((x)[0]))  // find len of an array
 
+
 char *strrev(char *str) {
     int i=0, j=0;
     char temp;
 
     j=strlen(str)-1;
-    while(i<j)
-    {
+    while(i<j) {
         temp=str[j];
         str[j]=str[i];
         str[i]=temp;
@@ -76,17 +88,23 @@ char *trim(char *s) {
     return rtrim(ltrim(s));
 }
 
-// replace (Haystack, Needle, Replacement, Offset, How Many)
-// start = 0 : start from beginning
-// number = 0 : replace all targets
-char *replace (char *a, const char *b, const char *c, int start, int number) {
-    char buf[MAX_L] = {'\0'};
+/*  replace (Haystack, Needle, Replacement, Offset, How Many)
+    start = 0 : start from beginning
+    number = 0 : replace all targets */
+char * replace (char *a, const char *b, const char *c, int start, int number) {
+    static char buf[MAX_L];
     char bfa[MAX_L] = {'\0'};
     char *p;
     char *s = 0;
     char *ap;
     long lenb = strlen(b);  // length of string to be replaced
     int count = 0;
+
+    assert(lenb < MAX_L);
+    assert(strlen(a) < MAX_L);
+    assert(start < MAX_L);
+
+    buf[0] = '\0';  // reset static string
 
     strcpy(bfa, a);
     ap = bfa;
@@ -110,22 +128,20 @@ char *replace (char *a, const char *b, const char *c, int start, int number) {
 
     strcat(buf, ap);  // add on the final segment
     sprintf(a, "%s", buf);
-    return a;
+    return buf;
 }
 
-/* For a 2d array of strings
-
+/* For a 2d array_of_strings ================================
   Example:
-
     char line[100] = "Michael, David, leidel, CEO,cool";
 
     array_of_strings in = aos_allocate(5, 64);
-    aos_fields(in, line, ",");
-    aos_display(in);
+    aos_fields(in, line, ",");  // parses delimited fields into array
+    #aos_display(in); // in.fields[n]
     aos_cleanup(in);
 */
 
-typedef struct aos {
+typedef struct array_of_strings {
     int max_row;    // max lenght of a field
     int max_col;    // number of fields
     char ** fields; // array of fields (char arrays or strings)
@@ -143,24 +159,20 @@ array_of_strings aos_allocate(int col, int len) {
     }
     return aos;
 }
-
 int aos_fields(array_of_strings aos, char *str, char *delim) {
     int finx = 0;
-    char* token = strtok(str, delim);
-    while (token != NULL) {
-        strcpy(aos.fields[finx++], trim(token));
-        token = strtok(NULL, delim);
-    }
+    char * found;
+
+    while( (found = strsep(&str, delim)) != NULL )
+        strcpy(aos.fields[finx++], trim(found));
     return finx;
 }
-
 void aos_display(array_of_strings aos) {
     int x;
     for(x=0; x < aos.max_col; x++) {
         printf("%s\n", aos.fields[x]);
     }
 }
-
 void aos_cleanup(array_of_strings aos) {
     /* free each column's data then free the column pointer's */
     for(int col=0; col < aos.max_col; col++) {
@@ -169,7 +181,7 @@ void aos_cleanup(array_of_strings aos) {
     free(aos.fields);
 }
 
-/*******************************************/
+/*================= END array_of_strings ====================*/
 
 bool file_exists (char *filename) {
   struct stat   buffer;
@@ -179,7 +191,7 @@ bool file_exists (char *filename) {
 FILE * open_for_read(char *fname) {
     FILE *f1;
     if ((f1 = fopen(fname,"rb")) == NULL) {
-        printf("\nError trying to open %s\n", fname);
+        printf("\nError trying to open %s\n\n", fname);
         exit(1);
     }
     return f1;
@@ -188,7 +200,7 @@ FILE * open_for_read(char *fname) {
 FILE * open_for_append(char *fname) {
     FILE *f1;
     if ((f1 = fopen(fname,"ab")) == NULL) {
-        printf("\nError trying to open %s\n", fname);
+        printf("\nError trying to open %s\n\n", fname);
         exit(1);
     }
     return f1;
@@ -197,7 +209,7 @@ FILE * open_for_append(char *fname) {
 FILE * open_for_write(char *fname) {
     FILE *f1;
     if ((f1 = fopen(fname,"wb")) == NULL) {
-        printf("\nError trying to open %s\n", fname);
+        printf("\nError trying to open %s\n\n", fname);
         exit(1);
     }
     return f1;
@@ -206,7 +218,7 @@ FILE * open_for_write(char *fname) {
 void readfile(char *buffer, const char *filename) {
     FILE *f;
     if ((f = fopen(filename,"rb")) == NULL) {
-        printf("\nError trying to open %s\n", filename);
+        printf("\nError trying to open %s\n\n", filename);
         exit(1);
     }
     fseek(f, 0, SEEK_END);
@@ -221,23 +233,21 @@ void readfile(char *buffer, const char *filename) {
     free(string);
 }
 
-char* removen(char *line) {
+char* removen(char *line) {  // see also rtrim()
+    // Just want to remove very last character of a string
     line[strlen(line) - 1] = '\0';
     return line;
 }
 
-char* today(char* buf) {
+char* today() {
     time_t rawtime;
     struct tm *info;
-    char buffer[80];
+    static char buffer[80];
 
     time( &rawtime );
-
     info = localtime( &rawtime );
-
     strftime(buffer, 80, "%F", info);
-    sprintf(buf, "%s", buffer );
-    return buf;
+    return buffer;
 }
 
 bool startswith (char* base, char* str) {
@@ -331,13 +341,18 @@ int lastindexof (char* base, char* str) {
 char *substr(char *string, int position, int length) {
    static char p[MAX_L] = {"\0"};
    int c;
+   int len = strlen(string);
 
-   if (p == NULL) {
-      printf("Unable to allocate memory.\n");
-      exit(1);
+   assert(len < MAX_L);
+   assert(position + length < len);
+
+   if (length == 0) {  // from position to end of string
+
+      return string + position;
+
    }
 
-   for (c = 0; c < length; c++) {
+   for (c = 0; c < length; c++) {  // return position for length
       *(p+c) = *(string+position);
       string++;
    }
@@ -388,7 +403,7 @@ bool equalsignorecase(char *str1, char *str2) {
 
 /*
     Is a specific named argument present
-    and what is it's position.
+    and what is it's arg index.
     ac - argc from main function args
     argv - argv from main function args
     arg - the named arg looking for
@@ -405,8 +420,7 @@ int is_arg(int ac, char **argv, char *arg) {
     return 0;  // arg not present
 }
 
-char* urlencode(char* originalText)
-{
+char* urlencode(char* originalText) {
     static char encodedText[MAX_L] = {"\0"};
 
     char *hex = "0123456789abcdef";
