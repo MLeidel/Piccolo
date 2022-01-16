@@ -22,10 +22,17 @@ int indexof (char* base, char* str)
 int lastindexof (char* base, char* str)
 
 ARRAY FUNCTIONS
-array_of_strings aos_allocate(int col, int len)
-int aos_fields(array_of_strings aos, char *str, char *delim)
-void aos_cleanup(array_of_strings aos)
-void aos_display(array_of_strings aos)
+uint ialen( int[] ) THIS IS A MACRO
+uint stralen( char** ) THIS IS A MACRO
+typedef struct csv_fields {
+    int max_row;    // max lenght of a field
+    int max_col;    // number of fields
+    char ** fields; // array of fields (char arrays or strings)
+} csv_fields;
+csv_fields csv_init_fields(int col, int len)
+int csv_get_fields(csv_fields stptr, char *str, char *delim)
+void csv_display_fields(csv_fields stptr)
+void csv_cleanup_fields(csv_fields stptr)
 
 FILE & PATH FUNCTIONS
 bool file_exists (char *filename)
@@ -37,12 +44,17 @@ void readfile(char *buffer, const char *filename)
 DATE FUNCTIONS
 char* today()
 
+SORTING FUNCTIONS
+void isort(int values[], int n)
+void ssort(const char* arr[], int n)
+
 OTHER FUNCTIONS
 int is_arg(int ac, char **argv, char *arg)
 -----------------------------------------
 --------- Helpfull gcc functions --------
+-----------------------------------------
 char *realpath(const char *restrict path, char *restrict resolved_path);
-*/
+/*\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/*/
 
 #include <assert.h>
 #include <stdlib.h>
@@ -53,8 +65,30 @@ char *realpath(const char *restrict path, char *restrict resolved_path);
 #include <stdbool.h>
 #include <sys/stat.h>
 
-#define MAX_L 4096  // used for default string lengths **
-#define ARRSIZE(x)  (sizeof(x) / sizeof((x)[0]))  // find len of an array
+#define MAX_L 4096  // used a lot for default string lengths **
+
+// get length of an array of strings
+#define stralen(X) (uint)(sizeof(X) / sizeof(char*))
+// get length of an array of integers
+#define ialen(X) (uint)(sizeof(X) / sizeof(int))
+
+
+static int myisortcmp (const void * a, const void * b) {
+   return ( *(int*)a - *(int*)b );
+}
+// sort an array of integers
+void isort(int values[], int n) {
+    qsort(values, n, sizeof(int), myisortcmp);
+}
+
+
+static int myssortcmp(const void* a, const void* b) {
+      return strcmp(*(const char**)a, *(const char**)b);
+}
+// sort an array of strings
+void ssort(const char* arr[], int n) {
+    qsort(arr, n, sizeof(const char*), myssortcmp);
+}
 
 
 char *strrev(char *str) {
@@ -72,10 +106,12 @@ char *strrev(char *str) {
     return str;
 }
 
+
 char *ltrim(char *s) {
     while(isspace(*s)) s++;
     return s;
 }
+
 
 char *rtrim(char *s) {
     char* back = s + strlen(s);
@@ -84,13 +120,20 @@ char *rtrim(char *s) {
     return s;
 }
 
+
 char *trim(char *s) {
     return rtrim(ltrim(s));
 }
 
-/*  replace (Haystack, Needle, Replacement, Offset, How Many)
-    start = 0 : start from beginning
-    number = 0 : replace all targets */
+
+/***
+* replace arguments:
+* a: haystack string
+* b: needle to find
+* c: replacement string
+* start: index to start looking for needle (0 means beginning)
+* number: number of replacements to make (0 means replace all)
+***/
 char * replace (char *a, const char *b, const char *c, int start, int number) {
     static char buf[MAX_L];
     char bfa[MAX_L] = {'\0'};
@@ -119,74 +162,143 @@ char * replace (char *a, const char *b, const char *c, int start, int number) {
         strcat(buf, ap);  // building output buffer
         strcat(buf, c);  // with leading string and 1st replacement
         ap = p + lenb;  // increment pointer past the target string
-        s = ap;  // s's work is done; it becomes ap
+        s = ap;  // s becomes ap
         count++;
         if (number != 0 && count >= number) {
             break;
         }
     }
 
-    strcat(buf, ap);  // add on the final segment
+    strcat(buf, ap);  // concatenate final segment
     sprintf(a, "%s", buf);
     return buf;
 }
 
-/* For a 2d array_of_strings ================================
-  Example:
-    char line[100] = "Michael, David, leidel, CEO,cool";
 
-    array_of_strings in = aos_allocate(5, 64);
-    aos_fields(in, line, ",");  // parses delimited fields into array
-    #aos_display(in); // in.fields[n]
-    aos_cleanup(in);
+/* Parsing out fields in a csv string
+example:
+char line[100] = "Michael, David, leidel, DRUID,cool";
+
+csv_fields mycsv = csv_init_fields(5, 64);
+
+csv_get_fields(mycsv, line, ",");  // returns nbr of cols found
+csv_display_fields(mycsv);  // optional used mostly in development
+// .. can repeat
+
+csv_cleanup_fields(mycsv);  // REQUIRED to free dynamic memory
+
+// NOTE: the supplied input csv string is destroyed in the parsing
+// NOTE: to get a single field from a csv string see the getfield function
 */
 
-typedef struct array_of_strings {
+typedef struct csv_fields {
     int max_row;    // max lenght of a field
     int max_col;    // number of fields
     char ** fields; // array of fields (char arrays or strings)
-} array_of_strings;
+} csv_fields;
 
-array_of_strings aos_allocate(int col, int len) {
-    /*  initialize variables and allocate memory to an
-        array_of_strings struct */
-    array_of_strings aos;
-    aos.max_row = len;
-    aos.max_col = col;
-    aos.fields = malloc(aos.max_col * sizeof(char*));
-    for(int x=0; x < aos.max_col; x++) {
-        aos.fields[x] = malloc(aos.max_row * sizeof(char));
+csv_fields csv_init_fields(int col, int len) {
+     /*  initialize variables and allocate memory
+     */
+    csv_fields csvf;
+    csvf.max_row = len;
+    csvf.max_col = col;
+    csvf.fields = calloc(csvf.max_col, sizeof(char*));  // pointers
+    for(int x=0; x < csvf.max_col; x++) {
+        csvf.fields[x] = calloc(csvf.max_row, sizeof(char));
     }
-    return aos;
+    return csvf;
 }
-int aos_fields(array_of_strings aos, char *str, char *delim) {
+
+int csv_get_fields(csv_fields csvf, char *str, char *delim) {
+    /*  parse the csv fields into the array elements
+    */
     int finx = 0;
     char * found;
 
     while( (found = strsep(&str, delim)) != NULL )
-        strcpy(aos.fields[finx++], trim(found));
+        strcpy(csvf.fields[finx++], trim(found));
+
     return finx;
 }
-void aos_display(array_of_strings aos) {
-    int x;
-    for(x=0; x < aos.max_col; x++) {
-        printf("%s\n", aos.fields[x]);
-    }
-}
-void aos_cleanup(array_of_strings aos) {
-    /* free each column's data then free the column pointer's */
-    for(int col=0; col < aos.max_col; col++) {
-        free(aos.fields[col]);
-    }
-    free(aos.fields);
-}
 
-/*================= END array_of_strings ====================*/
+void csv_display_fields(csv_fields csvf) {
+    int x;
+    for(x=0; x < csvf.max_col; x++) {
+        printf("%s\n", csvf.fields[x]);
+    }
+}
+void csv_cleanup_fields(csv_fields csvf) {
+    /* free each column's data then free the column pointer's */
+    for(int col=0; col < csvf.max_col; col++) {
+        free(csvf.fields[col]);
+        csvf.fields[col] = NULL;
+    }
+    free(csvf.fields);
+    csvf.fields = NULL;
+}
+/*================= END csv_fields ====================*/
+
+
+/***
+* getfield args:
+* s:      pointer to string literal
+* deli:   character used for delimiting fields
+* coln:   the 'column' of the field to retrieve
+* strip:  strip leading/trailing whitespace before returning field
+***/
+char * getfield(char * s, char deli, int coln, bool strip) {
+   int i;   // current parsed delimiter (',' or '\0') count
+   int j;  // current parsed column count
+   int k; // current column length
+   char *p;  // pointer to current char in haystack
+   char *t; // pointer start of current field
+   static char line[MAX_L]; // return string
+
+   i = j = k = 0;
+   p = t = s;
+
+   memset(line, 0, MAX_L);
+
+   while (true) {
+      if (*p == deli || *p == '\0') {
+         i++;
+         j = i-1;
+
+         if (j == coln) {  // is this the field wanted?
+            if (j == 0) {  // time to return field
+               strncpy(line, t, k);
+            } else {
+               if ((t - s) > strlen(s)) {
+                  // this column request is out of bounds
+                  return NULL;
+               } else {
+                  strncpy(line, t, k-1);
+               }
+            }
+            if (strip) {
+               return trim(line);
+            } else {
+               return line;
+            }
+
+
+         } else {  // reset the marker variables
+            k = 0;  // reset "length" counter
+            t = p+1; // set next field start pointer
+         }
+      }  // end if delimiter
+      p++;
+      k++;
+   }  // end while
+}    // end getfield
+
 
 bool file_exists (char *filename) {
   struct stat   buffer;
   return (stat (filename, &buffer) == 0);
 }
+
 
 FILE * open_for_read(char *fname) {
     FILE *f1;
@@ -197,6 +309,7 @@ FILE * open_for_read(char *fname) {
     return f1;
 }
 
+
 FILE * open_for_append(char *fname) {
     FILE *f1;
     if ((f1 = fopen(fname,"ab")) == NULL) {
@@ -206,6 +319,7 @@ FILE * open_for_append(char *fname) {
     return f1;
 }
 
+
 FILE * open_for_write(char *fname) {
     FILE *f1;
     if ((f1 = fopen(fname,"wb")) == NULL) {
@@ -214,6 +328,7 @@ FILE * open_for_write(char *fname) {
     }
     return f1;
 }
+
 
 void readfile(char *buffer, const char *filename) {
     FILE *f;
@@ -233,11 +348,13 @@ void readfile(char *buffer, const char *filename) {
     free(string);
 }
 
+
 char* removen(char *line) {  // see also rtrim()
     // Just want to remove very last character of a string
     line[strlen(line) - 1] = '\0';
     return line;
 }
+
 
 char* today() {
     time_t rawtime;
@@ -250,15 +367,18 @@ char* today() {
     return buffer;
 }
 
+
 bool startswith (char* base, char* str) {
     return (strstr(base, str) - base) == 0;
 }
+
 
 bool endswith (char* base, char* str) {
     int blen = strlen(base);
     int slen = strlen(str);
     return (blen >= slen) && (0 == strcmp(base + blen - slen, str));
 }
+
 
 int indexOf_shift (char* base, char* str, int startIndex) {
     int result;
@@ -280,11 +400,13 @@ int indexOf_shift (char* base, char* str, int startIndex) {
     return result;
 }
 
+
 int indexof (char* base, char* str) {
     // indexof(haystack, needle);
     // find index of substring in a string
     return indexOf_shift(base, str, 0);
 }
+
 
 int charinx(char* base, char c) {
     // indexof(haystack, needle);
@@ -293,6 +415,7 @@ int charinx(char* base, char c) {
     ctos[0] = c;
     return indexof(base, ctos);
 }
+
 
 int lastindexof (char* base, char* str) {
     int result;
@@ -378,6 +501,7 @@ char *lowercase(char *str) {
     return str;
 }
 
+
 char *uppercase(char *str) {
     int i, length = strlen(str);
 
@@ -393,13 +517,16 @@ char *uppercase(char *str) {
     return str;
 }
 
+
 bool equals(char *str1, char *str2) {
     return (strcmp(str1, str2) == 0);
 }
 
+
 bool equalsignorecase(char *str1, char *str2) {
     return (strcasecmp(str1, str2) == 0);
 }
+
 
 /*
     Is a specific named argument present
@@ -419,6 +546,7 @@ int is_arg(int ac, char **argv, char *arg) {
     }
     return 0;  // arg not present
 }
+
 
 char* urlencode(char* originalText) {
     static char encodedText[MAX_L] = {"\0"};

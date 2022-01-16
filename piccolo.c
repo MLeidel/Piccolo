@@ -528,13 +528,13 @@ int main(int argc, char *argv[]) {
     fclose(fh);
     removen(line);  // remove new line character
     // parse out the values
-    array_of_strings in = aos_allocate(4, 16);
-    aos_fields(in, line, ",");
+    csv_fields in = csv_init_fields(4, 16);
+    csv_get_fields(in, line, ",");
     w_left      = atol(in.fields[0]);
     w_top       = atol(in.fields[1]);
     w_width     = atol(in.fields[2]);
     w_height    = atol(in.fields[3]);
-    aos_cleanup(in);
+    csv_cleanup_fields(in);
 
     gtk_widget_show(window1);
     gtk_window_move(GTK_WINDOW(window1), w_left, w_top);  // set metrics ...
