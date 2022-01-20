@@ -7,7 +7,8 @@ bool endswith (char* base, char* str)
 bool equals(char *str1, char *str2)
 bool equalsignorecase(char *str1, char *str2)
 bool startswith (char* base, char* str)
-char * replace (char *a, const char *b, const char *c, int start, int number)
+char *cshiftleft(char *str)
+char *replace (char *a, const char *b, const char *c, int start, int number)
 char *lowercase(char *str)
 char *ltrim(char *s)
 char *rtrim(char *s)
@@ -17,22 +18,23 @@ char *trim(char *s)
 char *uppercase(char *str)
 char* removen(char *line)   // see also rtrim()
 char* urlencode(char* originalText)
-int charinx(char* base, char c)
-int indexof (char* base, char* str)
-int lastindexof (char* base, char* str)
+long int charat(char* base, char c)
+long int indexof (char* base, char* str)
+long int lastcharat(char* base, char c)
+long int lastindexof (char* base, char* str)
 
 ARRAY FUNCTIONS
 uint ialen( int[] ) THIS IS A MACRO
 uint stralen( char** ) THIS IS A MACRO
-typedef struct csv_fields {
+typedef struct clist {
     int max_row;    // max lenght of a field
     int max_col;    // number of fields
-    char ** fields; // array of fields (char arrays or strings)
-} csv_fields;
-csv_fields csv_init_fields(int col, int len)
-int csv_get_fields(csv_fields stptr, char *str, char *delim)
-void csv_display_fields(csv_fields stptr)
-void csv_cleanup_fields(csv_fields stptr)
+    char ** get; // array of fields (char arrays or strings)
+} clist;
+clist clist_init(int col, int len)
+int clist_parse(clist, char *str, char *delim)
+void clist_display(clist)
+void clist_cleanup(clist)
 
 FILE & PATH FUNCTIONS
 bool file_exists (char *filename)
@@ -54,6 +56,9 @@ int is_arg(int ac, char **argv, char *arg)
 --------- Helpfull gcc functions --------
 -----------------------------------------
 char *realpath(const char *restrict path, char *restrict resolved_path);
+        //char* path = realpath(filename, NULL)
+char *getenv(const char *name)
+        // sprintf(descq_path, "%s/.config/descq", getenv("HOME"));
 /*\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/*/
 
 #include <assert.h>
@@ -71,6 +76,11 @@ char *realpath(const char *restrict path, char *restrict resolved_path);
 #define stralen(X) (uint)(sizeof(X) / sizeof(char*))
 // get length of an array of integers
 #define ialen(X) (uint)(sizeof(X) / sizeof(int))
+
+int panic(char * msg) {
+    fprintf(stderr, "myc-panic: \n%s\n", msg);
+    exit(EXIT_FAILURE);
+}
 
 
 static int myisortcmp (const void * a, const void * b) {
@@ -143,9 +153,9 @@ char * replace (char *a, const char *b, const char *c, int start, int number) {
     long lenb = strlen(b);  // length of string to be replaced
     int count = 0;
 
-    assert(lenb < MAX_L);
-    assert(strlen(a) < MAX_L);
-    assert(start < MAX_L);
+    if (!(lenb < MAX_L)) panic("replace inputs out of bounds");
+    if (!(strlen(a) < MAX_L)) panic("replace inputs out of bounds");
+    if (!(start < MAX_L)) panic("replace start out of bounds");
 
     buf[0] = '\0';  // reset static string
 
@@ -175,67 +185,149 @@ char * replace (char *a, const char *b, const char *c, int start, int number) {
 }
 
 
-/* Parsing out fields in a csv string
+char * cshiftleft(char *str) {
+    /* shift all characters beginning at str+1 one left
+    */
+    char *p = str;
+
+    do {
+        p++;
+        *(p-1) = *p;
+    } while(*p != '\0');
+
+    return str;
+}
+
+
+/* Parsing out values from a field delimited string
+csv string may include double quotes for explicit text
+',' inside double quotes are handled
+
 example:
-char line[100] = "Michael, David, leidel, DRUID,cool";
 
-csv_fields mycsv = csv_init_fields(5, 64);
+char * line; // some input csv string
 
-csv_get_fields(mycsv, line, ",");  // returns nbr of cols found
-csv_display_fields(mycsv);  // optional used mostly in development
-// .. can repeat
+clist list = clist_init(5, 64);
 
-csv_cleanup_fields(mycsv);  // REQUIRED to free dynamic memory
+clist_parse(list, line, ",");  // returns nbr of cols found
+
+// list.get[0] would be the first field
+
+clist_cleanup(list);  // free dynamic memory
 
 // NOTE: the supplied input csv string is destroyed in the parsing
 // NOTE: to get a single field from a csv string see the getfield function
 */
 
-typedef struct csv_fields {
+typedef struct clist {
     int max_row;    // max lenght of a field
     int max_col;    // number of fields
-    char ** fields; // array of fields (char arrays or strings)
-} csv_fields;
+    char ** get; // array of fields (array of strings)
+} clist;
 
-csv_fields csv_init_fields(int col, int len) {
-     /*  initialize variables and allocate memory
+clist clist_init(int col, int len) {
+     /* Initialize variables and allocate memory
+        Return pointer to clist struct
      */
-    csv_fields csvf;
+    clist csvf;
     csvf.max_row = len;
     csvf.max_col = col;
-    csvf.fields = calloc(csvf.max_col, sizeof(char*));  // pointers
+    csvf.get = calloc(csvf.max_col, sizeof(char*));  // pointers
     for(int x=0; x < csvf.max_col; x++) {
-        csvf.fields[x] = calloc(csvf.max_row, sizeof(char));
+        csvf.get[x] = calloc(csvf.max_row, sizeof(char));
     }
     return csvf;
 }
 
-int csv_get_fields(csv_fields csvf, char *str, char *delim) {
+char * qmark(char * str, char delim) {
+    /* Hides delimiters within dbl quotes
+       for the input string to csv_get_fields function.
+       Called from csv_get_fields.
+    */
+    char *p = str;
+    bool marking = false;
+
+    while(*p != '\0') {
+
+        if (*p == '\"') { // quotes found
+            if (marking) {
+                marking = false;
+                p++;
+                continue;
+            } else {
+                marking = true;
+                p++;
+                continue;
+            }
+        }  // quotes found
+
+        if ((*p == delim) && (marking)) {
+            *p = 31;  // US unit separator
+        }
+        p++;
+    }
+    return str;
+}
+
+int qunmark(char **str, int sz, char delim) {
+    /* Un-hides the delimiters found within dbl quotes
+       of fields now residing in the fields array/list.
+       Called from csv_get_fields.
+    */
+    char **p = str;
+    char *t;
+    int count = 0;
+
+    for (int x=0; x < sz; x++) {
+        t = p[x];
+        while(*t != '\0') {
+            if (*t == 31) {
+                *t = delim;
+                count++;
+            }
+            if (*t == '\"') cshiftleft(t);
+            t++;
+        }
+    }
+    return count;
+}
+
+int clist_parse(clist csvf, char *str, char *delim) {
     /*  parse the csv fields into the array elements
     */
     int finx = 0;
     char * found;
 
+    if (strlen(delim) != 1) {
+        panic("clist_parse delimiter must be length of 1");
+    }
+
+    qmark(str, delim[0]);  // hide quoted delimiters
+
     while( (found = strsep(&str, delim)) != NULL )
-        strcpy(csvf.fields[finx++], trim(found));
+        strcpy(csvf.get[finx++], trim(found));
+
+    qunmark(csvf.get, finx, delim[0]);  // put back hidden delimiters
 
     return finx;
 }
 
-void csv_display_fields(csv_fields csvf) {
+void clist_display(clist csvf) {
     int x;
     for(x=0; x < csvf.max_col; x++) {
-        printf("%s\n", csvf.fields[x]);
+        printf("%03d - [%s]\n", x, csvf.get[x]);
     }
 }
-void csv_cleanup_fields(csv_fields csvf) {
-    /* free each column's data then free the column pointer's */
+
+void clist_cleanup(clist csvf) {
+    /* free each column's data then free the column pointer's
+    */
     for(int col=0; col < csvf.max_col; col++) {
-        free(csvf.fields[col]);
-        csvf.fields[col] = NULL;
+        free(csvf.get[col]);
+        csvf.get[col] = NULL;
     }
-    free(csvf.fields);
-    csvf.fields = NULL;
+    free(csvf.get);
+    csvf.get = NULL;
 }
 /*================= END csv_fields ====================*/
 
@@ -304,7 +396,7 @@ FILE * open_for_read(char *fname) {
     FILE *f1;
     if ((f1 = fopen(fname,"rb")) == NULL) {
         printf("\nError trying to open %s\n\n", fname);
-        exit(1);
+        return NULL;
     }
     return f1;
 }
@@ -314,7 +406,7 @@ FILE * open_for_append(char *fname) {
     FILE *f1;
     if ((f1 = fopen(fname,"ab")) == NULL) {
         printf("\nError trying to open %s\n\n", fname);
-        exit(1);
+        return NULL;
     }
     return f1;
 }
@@ -324,17 +416,17 @@ FILE * open_for_write(char *fname) {
     FILE *f1;
     if ((f1 = fopen(fname,"wb")) == NULL) {
         printf("\nError trying to open %s\n\n", fname);
-        exit(1);
+        return NULL;
     }
     return f1;
 }
 
 
-void readfile(char *buffer, const char *filename) {
+int readfile(char *buffer, const char *filename) {
     FILE *f;
     if ((f = fopen(filename,"rb")) == NULL) {
         printf("\nError trying to open %s\n\n", filename);
-        exit(1);
+        return -1;
     }
     fseek(f, 0, SEEK_END);
     long fsize = ftell(f);
@@ -346,6 +438,7 @@ void readfile(char *buffer, const char *filename) {
     string[fsize] = 0;
     strcpy(buffer, string);
     free(string);
+    return 0;
 }
 
 
@@ -380,84 +473,67 @@ bool endswith (char* base, char* str) {
 }
 
 
-int indexOf_shift (char* base, char* str, int startIndex) {
-    int result;
-    int baselen = strlen(base);
-    // str should not longer than base
-    if (strlen(str) > baselen || startIndex > baselen) {
-        result = -1;
-    } else {
-        if (startIndex < 0) {
-            startIndex = 0;
-        }
-        char* pos = strstr(base+startIndex, str);
-        if (pos == NULL) {
-            result = -1;
+char * strrstr(char *s, char *t) {
+    // does not come with gcc as far as I know
+    char *p, *r;
+    char *i = NULL;
+    p = s;
+    while (1) {
+        r = strstr(s, t);
+        if (r == NULL) {
+            return i;
         } else {
-            result = pos - base;
+            i = r;
+            s++;
         }
     }
-    return result;
 }
 
 
-int indexof (char* base, char* str) {
-    // indexof(haystack, needle);
-    // find index of substring in a string
-    return indexOf_shift(base, str, 0);
-}
-
-
-int charinx(char* base, char c) {
-    // indexof(haystack, needle);
-    // find index of a character in a string
-    char ctos[2] = {'\0'};
-    ctos[0] = c;
-    return indexof(base, ctos);
-}
-
-
-int lastindexof (char* base, char* str) {
-    int result;
-    // str should not longer than base
-    if (strlen(str) > strlen(base)) {
-        result = -1;
+long int indexof(char* base, char* str) {
+    // find the 'index' of a string in a string
+    char *p;
+    p = strstr (base, str);
+    if (p == NULL) {
+        return -1;
     } else {
-        int start = 0;
-        int endinit = strlen(base) - strlen(str);
-        int end = endinit;
-        int endtmp = endinit;
-        while(start != end) {
-            start = indexOf_shift(base, str, start);
-            end = indexOf_shift(base, str, end);
-
-            // not found from start
-            if (start == -1) {
-                end = -1; // then break;
-            } else if (end == -1) {
-                // found from start
-                // but not found from end
-                // move end to middle
-                if (endtmp == (start+1)) {
-                    end = start; // then break;
-                } else {
-                    end = endtmp - (endtmp - start) / 2;
-                    if (end <= start) {
-                        end = start+1;
-                    }
-                    endtmp = end;
-                }
-            } else {
-                // found from both start and end
-                // move start to end and
-                // move end to base - strlen(str)
-                start = end;
-                end = endinit;
-            }
-        }
-        result = start;
+        return p-base;
     }
-    return result;
+}
+
+
+long int lastindexof (char* base, char* str) {
+    // find the last 'index' of a string in a string
+    char *p;
+    p = strrstr(base, str);
+    if (p == NULL) {
+        return -1;
+    } else {
+        return p-base;
+    }
+}
+
+
+long int charat(char* base, char c) {
+    // find index of a character in a string
+    char *p;
+    p = strchr(base, c);
+    if (p == NULL) {
+        return -1;
+    } else {
+        return p-base;
+    }
+}
+
+
+long int lastcharat(char* base, char c) {
+    char *p;
+    p = strrchr(base, c);
+     if (p == NULL) {
+        return -1;
+    } else {
+        return p-base;
+    }
 }
 
 
@@ -466,8 +542,8 @@ char *substr(char *string, int position, int length) {
    int c;
    int len = strlen(string);
 
-   assert(len < MAX_L);
-   assert(position + length < len);
+   if (!(len < MAX_L)) panic("substr inputs out of bounds");
+   if (!(position + length < len)) panic("substr inputs out of bounds");
 
    if (length == 0) {  // from position to end of string
 
