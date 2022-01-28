@@ -526,7 +526,7 @@ int main(int argc, char *argv[]) {
     fh = open_for_read(winmet_path);
     fgets(line, 64, fh);
     fclose(fh);
-    removen(line);  // remove new line character
+    chomp(line);  // remove new line character
     // parse out the values
     clist in = clist_init(4, 16);
     clist_parse(in, line, ",");
@@ -573,7 +573,7 @@ int main(int argc, char *argv[]) {
       modified = 0;
     }
 
-    apply_css_text(".txtv {font: bold 11pt 'Andale Mono';}");  // from gtkcss.h
+    apply_css_text(".txtv {font: normal 11pt 'JetBrains Mono';}");  // from gtkcss.h
 
     // Set new TAB stops (values are in pixils)
     ptaNameList = pango_tab_array_new_with_positions(2, TRUE,
