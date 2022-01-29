@@ -19,11 +19,12 @@ bool equals(char*, char*);
 bool equalsignorecase(char*, char*);
 bool startswith (char*, char*);
 char* chomp(char*);   // see also rtrim()
-char* cshiftleft(char*);
 char* getfield(char*, char, int, bool);
 char* replace (char*, char*, char*, size_t, int);
 char* lowercase(char*);
+char* leftof(char*, char*, int);
 char* ltrim(char*);
+char* rightof(char*, char*, int);
 char* rtrim(char*);
 char* strrev(char*);
 char* strrstr(char*, char*);
@@ -167,10 +168,10 @@ char *strrev(char *str) {
 
 
 char *ltrim(char *s) {
-    while(isspace(*s)) cshiftleft(s);
-    return s;
+    char *forward = s;
+    while(isspace(*forward++));
+    return forward-1;
 }
-
 
 char *rtrim(char *s) {
     char* back = s + strlen(s);
@@ -179,9 +180,32 @@ char *rtrim(char *s) {
     return s;
 }
 
-
 char *trim(char *s) {
     return rtrim(ltrim(s));
+}
+
+char *rightof(char *in, char *targ, int start) {
+    char *p;
+    char *s;
+
+    s = in + start;
+    p = strstr(s, targ);
+    if (p == NULL)
+        return NULL;
+    p += strlen(targ);
+    return p;  // *in remains unchanged
+}
+
+char *leftof(char *in, char *targ, int start) {
+    char *p;
+    char *s;
+
+    s = in + start;
+    p = strstr(s, targ);
+    if (p == NULL)
+        return NULL;
+    *p = '\0';
+    return s;  // *in has been modified
 }
 
 
@@ -258,31 +282,17 @@ int replacechar(char *a, char b, char c, int start, int number) {
 }
 
 
-char * cshiftleft(char *str) {
-    /* if str is not NULL then
-     * shift all characters beginning at str+1 one left
-    */
-    if (str != NULL)
-        return strcpy(str, str+1);
-    else
-        return NULL;
-}
-
-
-/* clist: Parsing out values from a field delimited string
-csv string may include double quotes for explicit text
-',' inside double quotes are handled
+/*  clist: Parses out values from a csv string
+    that may use double quotes for explicit text.
+    Delimiters inside double quoted fields are
+    ignored.
 
 example:
 
 char * line; // some input csv string
-
 clist list = clist_init(5, 64);
-
 clist_parse(list, line, ",");  // returns nbr of cols found
-
     list.get[0] would be the first field
-
 clist_cleanup(list);  // free dynamic memory
 
 NOTE: the supplied input csv string is destroyed in the parsing
@@ -342,7 +352,7 @@ char * qmark(char * str, char delim) {
 int qunmark(char **str, int sz, char delim) {
     /* Un-hides the delimiters found within dbl quotes
        of fields now residing in the fields array/list.
-       Called from csv_get_fields.
+       Called from clist.
     */
     char **p = str;
     char *t;
@@ -355,7 +365,6 @@ int qunmark(char **str, int sz, char delim) {
                 *t = delim;
                 count++;
             }
-            if (*t == '\"') cshiftleft(t);
             t++;
         }
     }
@@ -419,7 +428,6 @@ int qunmark1(char *str, char delim) {
           *t = delim;
           count++;
       }
-      if (*t == '\"') cshiftleft(t);
       t++;
    }
     return count;
