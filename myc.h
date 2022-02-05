@@ -9,6 +9,9 @@
 #include <string.h>
 #include <time.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <unistd.h>
+#include <signal.h>
 #include <sys/stat.h>
 
   // DECLARATIONS
@@ -19,8 +22,9 @@ bool equals(char*, char*);
 bool equalsignorecase(char*, char*);
 bool startswith (char*, char*);
 char* chomp(char*);   // see also rtrim()
-char* getfield(char*, char, int, bool);
-char* replace (char*, char*, char*, size_t, int);
+char* deletechar(char*, char*, char, int);
+char* field(char*, char*, char, int, bool);
+char* replace (char*, char*, char*, char*, int);
 char* lowercase(char*);
 char* leftof(char*, char*, int);
 char* ltrim(char*);
@@ -28,20 +32,21 @@ char* rightof(char*, char*, int);
 char* rtrim(char*);
 char* strrev(char*);
 char* strrstr(char*, char*);
-char* substr(char*, int, int);
+char* substr(char*, char*, int, int);
 char* trim(char*);
 char* uppercase(char*);
 char* urlencode(char*);
-int strnbr(char*, char*);
 int charat(char*, char);
+int countchar(char *buf, char *targ);
 int indexof (char*, char*);
 int lastcharat(char*, char);
 int lastindexof (char*, char*);
-int replacechar(char*, char, char, int, int);
+int replacechar(char*, char, char, int);
+int strtype(char *, int);
 
 // ARRAY FUNCTIONS
-// uint ialen( int[] ) THIS IS A MACRO
-// uint stralen( char** ) THIS IS A MACRO
+
+// ARRSIZE(x) THIS IS A MACRO
 
 typedef struct clist {
     int max_row;   // max lenght of a field
@@ -60,16 +65,15 @@ FILE * open_for_append(char*);
 FILE * open_for_read(char*);
 FILE * open_for_write(char*);
 int readfile(char*, const char*);
+int writefile(char*, const char*, bool append);
 
-// DATE FUNCTIONS
+// DATE/TIME FUNCTIONS
 char* today();
+void timeout(int, void f(int));
 
 // SORTING FUNCTIONS
 void isort(int[], int);
 void ssort(char*[], int, bool);
-
-// OTHER FUNCTIONS
-int is_arg(int, char**, char*);
 
 // EXTENDED STRING FUNCTIONS
 
@@ -85,7 +89,7 @@ bool cstr_append(cstr, char*);
 bool cstr_copy(cstr, char*);
 bool cstr_prepend(cstr, char*);
 bool cstr_insert(cstr, char*, size_t);
-void cstr_replace(cstr, char*, char*, size_t, int);
+void cstr_replace(cstr, char*, char*, int);
 
 /* END DECLARATIONS
 
@@ -100,17 +104,12 @@ char *getenv(const char *name)
 
 #define MAX_L 4096  // used a lot for default string lengths
 
-// #define ARRSIZE(x)  (sizeof(x) / sizeof((x)[0]))
-// get length of an array of strings
-#define stralen(X) (uint)(sizeof(X) / sizeof(char*))
-// get length of an array of integers
-#define ialen(X) (uint)(sizeof(X) / sizeof(int))
+#define ARRSIZE(x)  (sizeof(x) / sizeof((x)[0]))
 
 int panic(char * msg) {
     fprintf(stderr, "myc-panic: \n%s\n", msg);
     exit(EXIT_FAILURE);
 }
-
 
 static int myisortcmp (const void * a, const void * b) {
    return ( *(int*)a - *(int*)b );
@@ -120,6 +119,13 @@ void isort(int values[], int n) {
     qsort(values, n, sizeof(int), myisortcmp);
 }
 
+static int mydsortcmp (const void * a, const void * b) {
+   return ( *(double*)a - *(double*)b );
+}
+// sort an array of doubles
+void dsort(double values[], int n) {
+    qsort(values, n, sizeof(double), mydsortcmp);
+}
 
 static int myssortcmp(const void* a, const void* b) {
       return strcmp(*(const char**)a, *(const char**)b);
@@ -136,16 +142,13 @@ void ssort(char* arr[], int n, bool ignorecase) {
 }
 
 
-int strnbr(char *s, char *t) {
+int countchar(char *buf, char *targ) {
     int count = 0;
-    size_t target = strlen(t);
-    char *p = s;
-
-    while(1) {
-        p = strstr(p, t);
-        if (p == NULL) break;
-        p += target;
-        count++;
+    char *tmp = buf;
+    while(tmp = strstr(tmp, targ))
+    {
+       count++;
+       tmp++;
     }
     return count;
 }
@@ -197,31 +200,30 @@ char *rightof(char *in, char *targ, int start) {
 }
 
 char *leftof(char *in, char *targ, int start) {
+    static char s[MAX_L];  // work buffer
     char *p;
-    char *s;
 
-    s = in + start;
+    strcpy(s, in + start);
     p = strstr(s, targ);
     if (p == NULL)
         return NULL;
     *p = '\0';
-    return s;  // *in has been modified
+    return s;  // *in remains unchanged
 }
 
 
 /***
-* replace arguments:
-* a: haystack string
-* b: needle to find
-* c: replacement string
-* start: index to start looking for needle (0 means beginning)
-* number: number of replacements to make (0 means replace all)
+* replace
+* params:
+*   buf: return string with replacements
+*   a: haystack string
+*   b: needle string
+*   c: replacement string
+*   number: number of replacements to make (0 means replace all)
 * NOTE: replace will fail if the resulting string length after replacements
 * is greater than MAX_L. 'cstr_replace' does not have this limitation.
 ***/
-char * replace (char *a, char *b, char *c, size_t start, int number) {
-
-    static char buf[MAX_L] = {"\0"};
+char * replace (char *buf, char *a, char *b, char *c, int number) {
     char *bfa = calloc(MAX_L, sizeof(char));
     long lenb = strlen(b);  // length of string to be replaced
     int count = 0;
@@ -231,13 +233,11 @@ char * replace (char *a, char *b, char *c, size_t start, int number) {
 
     if (!(lenb < MAX_L)) panic("replace inputs out of bounds");
     if (!(strlen(a) < MAX_L)) panic("replace inputs out of bounds");
-    if (!(start < MAX_L)) panic("replace start out of bounds");
-
-    buf[0] = '\0';  // reset static string
 
     strcpy(bfa, a);
-    ap = bfa;
-    s = ap + start;
+    *buf = '\0';  // initalize return string
+
+    s = ap = bfa;
 
     while(1) {
         p = strstr(s, b);
@@ -257,18 +257,17 @@ char * replace (char *a, char *b, char *c, size_t start, int number) {
 
     strcat(buf, ap);  // concatenate final segment
     free(bfa);
+    bfa = NULL;
     return buf;
 }
 
 
-int replacechar(char *a, char b, char c, int start, int number) {
+int replacechar(char *a, char b, char c, int number) {
     int len = strlen(a);
     char *p;
     int count = 0;
 
     p = a;
-    if (start > 0)
-        p += start;
 
     while (*p != '\0') {
         if (*p == b) {
@@ -296,7 +295,7 @@ clist_parse(list, line, ",");  // returns nbr of cols found
 clist_cleanup(list);  // free dynamic memory
 
 NOTE: the supplied input csv string is destroyed in the parsing
-NOTE: to get a single field from a csv string see the getfield function
+NOTE: to get a single field from a csv string see the field function
 */
 
 // typedef struct clist {
@@ -321,8 +320,7 @@ clist clist_init(int col, int len) {
 
 char * qmark(char * str, char delim) {
     /* Hides delimiters within dbl quotes
-       for the input string to csv_get_fields function.
-       Called from csv_get_fields.
+       for the input string to 'field' function.
     */
     char *p = str;
     bool marking = false;
@@ -417,7 +415,7 @@ void clist_cleanup(clist csvf) {
 
 int qunmark1(char *str, char delim) {
     /*  1d array version of qunmark
-        used in getfield()
+        used in field()
     */
     char *t;
     int count = 0;
@@ -434,26 +432,24 @@ int qunmark1(char *str, char delim) {
 }
 
 /***
-* getfield: extract one field out of a delimited string of fields
+* field: extract one field out of a delimited string of fields
+* r:     pointer for result storage
 * s:     pointer to string literal
 * deli:  character used for delimiting fields
 * coln:  the 'column' of the field to retrieve
 * strip: boolean: strip leading/trailing whitespace before returning field
 * NOTE: Delimiter SPACE, when consecutive treated as one delimiter
-* NOTE: getfield does not destroy the input string
+* NOTE: field does not destroy the input string
 ***/
-char * getfield(char * s, char deli, int coln, bool strip) {
+char * field(char *r, char * s, char deli, int coln, bool strip) {
    int i;   // parsed delimiter (or '\0') count
    int j;  // parsed column count
    int k; // column length
    char *p;  // pointer to char in haystack
    char *t; // pointer start of field
-   static char line[MAX_L]; // return string
 
    i = j = k = 0;
    p = t = s;
-
-   memset(line, 0, MAX_L);
 
    qmark(s, deli);  // hides delimiters inside dbl quotes
 
@@ -474,21 +470,23 @@ char * getfield(char * s, char deli, int coln, bool strip) {
 
          if (j == coln) {  // is this the field wanted?
             if (j == 0) {  // time to return field
-               strncpy(line, t, k);
+               strncpy(r, t, k);
+               r[k] = '\0';
             } else {
                if ((t - s) > strlen(s)) {
                   // this column request is out of bounds
                   return NULL;
                } else {
-                  strncpy(line, t, k-1);
+                  strncpy(r, t, k-1);
+                  r[k-1] = '\0';
                }
             }
-            replacechar(s, 31, deli, 0, 0);  // restore the original input string
-            qunmark1(line, deli);  // show quoted delimiters and remove dbl quotes
+            replacechar(s, 31, deli, 0);  // restore the original input string
+            qunmark1(r, deli);  // show quoted delimiters and remove dbl quotes
             if (strip) {
-               return trim(line);
+               return trim(r);
             } else {
-               return line;
+               return r;
             }
 
          } else {  // reset the marker variables
@@ -499,7 +497,7 @@ char * getfield(char * s, char deli, int coln, bool strip) {
       p++;
       k++;
    }  // end while
-}    // end getfield
+}    // end field
 
 
 bool file_exists (char *filename) {
@@ -510,24 +508,25 @@ bool file_exists (char *filename) {
 
 FILE * open_for_read(char *fname) {
     if (!file_exists(fname)) {
-        panic("No file or misspelled");
+        panic("open_for_read: No file or misspelled");
     }
     return fopen(fname,"rb");
 }
 
 
 FILE * open_for_append(char *fname) {
-    if (!file_exists(fname)) {
-        panic("No file or misspelled");
+    FILE *f1;
+    if ((f1 = fopen(fname,"ab")) == NULL) {
+        panic("open_for_append: error on fopen");
     }
-    return fopen(fname,"ab");
+    return f1;
 }
 
 
 FILE * open_for_write(char *fname) {
     FILE *f1;
     if ((f1 = fopen(fname,"wb")) == NULL) {
-        panic("Error opening file for write");
+        panic("open_for_write: error on fopen");
     }
     return f1;
 }
@@ -552,11 +551,51 @@ int readfile(char *buffer, const char *filename) {
     return 0;
 }
 
+int writefile(char *buffer, const char *filename, bool append) {
+    FILE *f1;
+    if (append) {
+        if ((f1 = fopen(filename,"ab")) == NULL) {
+            panic("open_for_write: error on writefile append");
+        }
+    } else {
+        if ((f1 = fopen(filename,"wb")) == NULL) {
+            panic("open_for_write: error on writefile");
+        }
+    }
+    fprintf(f1,"%s", buffer);
+    fclose(f1);
+    return 0;
+}
+
 
 char* chomp(char *line) {  // see also rtrim()
     // Remove very last character of a string
     line[strlen(line) - 1] = '\0';
     return line;
+}
+
+
+char * deletechar(char *s, char *in, char targ, int number) {
+   char *t = s;
+   char *p = in;
+   int len = strlen(p);
+   int newlen = len;
+   int count = 0;
+
+   for(int x=0; x < len; x++) {
+      if (*p == targ) {
+        if ( number == 0 || (number > 0 && ++count <= number) ) {
+           p++;
+           newlen--;
+           continue;
+        }
+      }
+      *t = *p;
+      t++;
+      p++;
+   }
+   *(s+newlen) = '\0';  // reset the zero byte
+   return s;
 }
 
 
@@ -569,6 +608,18 @@ char* today() {  // returns yyyy-mm-dd
     info = localtime( &rawtime );
     strftime(buffer, 80, "%F", info);
     return buffer;
+}
+
+
+/***
+* timeout(sec) function starts a timer
+* for sec seconds and calls a user function
+* after sec seconds. "sec" is passed along
+* to "f" the user handler function.
+***/
+void timeout(int sec, void f(int)) {  // receive address of print
+    signal(SIGALRM, f);
+    alarm(sec);
 }
 
 
@@ -648,8 +699,7 @@ int lastcharat(char* base, char c) {
 }
 
 
-char *substr(char *string, int position, int length) {
-   static char p[MAX_L] = {"\0"};
+char *substr(char *p, char *string, int position, int length) {
    int c;
    int len = strlen(string);
 
@@ -658,7 +708,8 @@ char *substr(char *string, int position, int length) {
 
    if (length == 0) {  // from position to end of string
 
-      return string + position;
+      strcpy(p, string + position);
+      return p;
 
    }
 
@@ -700,26 +751,6 @@ bool equals(char *str1, char *str2) {
 
 bool equalsignorecase(char *str1, char *str2) {
     return (strcasecmp(str1, str2) == 0);
-}
-
-
-/*
-    Is a specific named argument present
-    and what is it's arg index.
-    ac - argc from main function args
-    argv - argv from main function args
-    arg - the named arg looking for
-*/
-int is_arg(int ac, char **argv, char *arg) {
-    if (ac < 2) {
-        return 0;
-    }
-    for(int x=1; x < ac; x++) {
-        if (0 == strcmp(argv[x], arg)) {
-            return x;  // return position of arg
-        }
-    }
-    return 0;  // arg not present
 }
 
 
@@ -784,6 +815,7 @@ cstr cstr_init(size_t len, char fill) {
 void cstr_cleanup(cstr cs) {
     cs.length = 0;
     free(cs.str);
+    cs.str = NULL;
 }
 
 void cstr_fill(cstr cs, char c) {
@@ -837,13 +869,14 @@ bool cstr_insert(cstr cs, char *s, size_t inx) {
     }
 }
 
+
 /*
-    A word about this function. Unlike the "replace" function (above)
-    this one works only with strings created with cstr.init().
+    Unlike the "replace" function (above) this one works only
+    with strings created with CstrInit().
     Also here the maximum string length is determined by cstr.length
     so the MAX_L limit does not exist.
 */
-void cstr_replace(cstr cs, char *b, char *c, size_t start, int number) {
+void cstr_replace(cstr cs, char *b, char *c, int number) {
     char *buf = calloc(cs.length, sizeof(char));
     char *bfa = calloc(cs.length, sizeof(char));
     size_t lenb = strlen(b);  // length of string to be replaced
@@ -854,11 +887,9 @@ void cstr_replace(cstr cs, char *b, char *c, size_t start, int number) {
 
     if (!(lenb < cs.length)) panic("replace inputs out of bounds");
     if (!(strlen(cs.str) < cs.length)) panic("replace inputs out of bounds");
-    if (!(start < cs.length)) panic("replace start out of bounds");
 
     strcpy(bfa, cs.str);
-    ap = bfa;
-    s = ap + start;
+    s = ap = bfa;
 
     while(1) {
         p = strstr(s, b);
@@ -881,6 +912,95 @@ void cstr_replace(cstr cs, char *b, char *c, size_t start, int number) {
     strcpy(cs.str, buf);
     free(bfa);
     free(buf);
+}
+
+/***
+* functions for string
+* to compliment ctype.h
+* functions for characters
+* isalpha -> strtype(buf, ALPHA)
+* isalnum -> strtype(buf, ALNUM)
+* isdigit -> strtype(buf, DIGIT)
+* isprint -> strtype(buf, PRINT)
+* isspace -> strtype(buf, SPACE)
+* isupper -> strtype(buf, UPPER)
+* islower -> strtype(buf, LOWER)
+* ispunct -> strtype(buf, PUNCT)
+* Returns int:
+*    0 = none found
+*    N = number found
+*   -1 = all found
+***/
+enum styp {ALPHA, ALNUM, DIGIT, PRINT, SPACE, UPPER, LOWER, PUNCT};
+
+int strtype(char *buf, int istype) {
+    size_t len;
+    size_t count = 0;
+
+    len = strlen(buf);
+
+    switch (istype) {
+        case ALPHA:
+            for(int x=0; x < len; x++) {
+                if (isalpha(buf[x])) {
+                    count++;
+                }
+            }
+            break;
+        case ALNUM:
+            for(int x=0; x < len; x++) {
+                if (isalnum(buf[x])) {
+                    count++;
+                }
+            }
+            break;
+        case DIGIT:
+            for(int x=0; x < len; x++) {
+                if (isdigit(buf[x])) {
+                    count++;
+                }
+            }
+            break;
+        case PRINT:
+            for(int x=0; x < len; x++) {
+                if (isprint(buf[x])) {
+                    count++;
+                }
+            }
+            break;
+        case SPACE:
+            for(int x=0; x < len; x++) {
+                if (isspace(buf[x])) {
+                    count++;
+                }
+            }
+            break;
+        case UPPER:
+            for(int x=0; x < len; x++) {
+                if (isupper(buf[x])) {
+                    count++;
+                }
+            }
+            break;
+        case LOWER:
+            for(int x=0; x < len; x++) {
+                if (islower(buf[x])) {
+                    count++;
+                }
+            }
+            break;
+        case PUNCT:
+            for(int x=0; x < len; x++) {
+                if (ispunct(buf[x])) {
+                    count++;
+                }
+            }
+            break;
+        default:
+            panic("invalid strtype enum value");
+    }
+    if (count == len) return -1;  // entire alpha
+    return count;  // will be > -1 and less than len
 }
 
 #endif
