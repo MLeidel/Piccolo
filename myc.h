@@ -13,6 +13,12 @@
 #include <unistd.h>
 #include <signal.h>
 #include <sys/stat.h>
+#include <dirent.h>
+#include <sys/types.h>
+#include <errno.h>
+#include <stdarg.h>
+#include <limits.h>
+
 
   // DECLARATIONS
 
@@ -21,40 +27,44 @@ bool endswith (char*, char*);
 bool equals(char*, char*);
 bool equalsignorecase(char*, char*);
 bool startswith (char*, char*);
-char* chomp(char*);   // see also rtrim()
+char* chomp(char*);
+char* concat(char*, int, ...);
 char* deletechar(char*, char*, char, int);
 char* field(char*, char*, char, int, bool);
-char* replace (char*, char*, char*, char*, int);
+char* insert(char*, char*, char*, size_t);
 char* lowercase(char*);
-char* leftof(char*, char*, int);
+char* leftof(char*, char*, char*, int);
 char* ltrim(char*);
-char* rightof(char*, char*, int);
+char* replace (char*, char*, char*, char*, int);
+char* rightof(char*, char*, char*, int);
 char* rtrim(char*);
 char* strrev(char*);
 char* strrstr(char*, char*);
 char* substr(char*, char*, int, int);
 char* trim(char*);
 char* uppercase(char*);
-char* urlencode(char*);
+char* urlencode(char*, char*);
 int charat(char*, char);
-int countchar(char *buf, char *targ);
+int contains(char*, char*);
 int indexof (char*, char*);
 int lastcharat(char*, char);
 int lastindexof (char*, char*);
 int replacechar(char*, char, char, int);
-int strtype(char *, int);
+int replacesz(char *, char *, char *, int);
+int strtype(char*, int);
 
 // ARRAY FUNCTIONS
 
-// ARRSIZE(x) THIS IS A MACRO
+    // ARRSIZE(x) THIS IS A MACRO
 
 typedef struct clist {
-    int max_row;   // max lenght of a field
-    int max_col;  // number of fields
-    char**  get; // array of fields (char arrays or strings)
+    int nbr_rows;  // maximum records (columns, fields)
+    int len_rows; // maximum length of one record (col, field)
+    char** get;  // array of fields (char arrays or strings)
 } clist;
 
 clist clist_init(int, int);
+clist clist_dir(const char*, int, bool);
 int clist_parse(clist, char*, char*);
 void clist_display(clist);
 void clist_cleanup(clist);
@@ -64,32 +74,20 @@ bool file_exists (char*);
 FILE * open_for_append(char*);
 FILE * open_for_read(char*);
 FILE * open_for_write(char*);
+int isfile(const char*);
+int pathsize(const char*, int);
 int readfile(char*, const char*);
 int writefile(char*, const char*, bool append);
 
-// DATE/TIME FUNCTIONS
-char* today();
+// DATE/TIME & OTHER FUNCTIONS
+char* date(const char*);
 void timeout(int, void f(int));
+void multifree(int, ...);
 
 // SORTING FUNCTIONS
 void isort(int[], int);
 void ssort(char*[], int, bool);
-
-// EXTENDED STRING FUNCTIONS
-
-typedef struct cstr {
-    size_t length;  // allocated length
-    char *str;
-} cstr;
-
-cstr cstr_init(size_t, char);
-void cstr_cleanup(cstr);
-void cstr_fill(cstr, char);
-bool cstr_append(cstr, char*);
-bool cstr_copy(cstr, char*);
-bool cstr_prepend(cstr, char*);
-bool cstr_insert(cstr, char*, size_t);
-void cstr_replace(cstr, char*, char*, int);
+void dsort(double[], int);
 
 /* END DECLARATIONS
 
@@ -97,18 +95,30 @@ void cstr_replace(cstr, char*, char*, int);
 --------- Helpfull gcc functions --------
 -----------------------------------------
 char *realpath(const char *restrict path, char *restrict resolved_path);
-        //char* path = realpath(filename, NULL)
+        // realpath(filename, buff) // returns NULL on error
 char *getenv(const char *name)
         // sprintf(descq_path, "%s/.config/descq", getenv("HOME"));
 /*\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/*/
 
+/*
+            MACROS, DEFINES, AND UTILITIES
+*/
 #define MAX_L 4096  // used a lot for default string lengths
-
 #define ARRSIZE(x)  (sizeof(x) / sizeof((x)[0]))
+#define ERRMSG(a, b, c) (errmsg(a, b, c, __LINE__))
 
-int panic(char * msg) {
-    fprintf(stderr, "myc-panic: \n%s\n", msg);
-    exit(EXIT_FAILURE);
+void errmsg(int rc, bool quit, char *msg, int line) {
+    fprintf(stderr,
+        "ERRMSG near line: %d, errno: %d %s\n%s\n",
+        line,
+        rc,
+        strerror(rc),
+        msg
+        );
+    if (quit) {  // print additional line and terminate program
+        fprintf(stderr, "Program Exited\n");
+        exit(EXIT_FAILURE);
+    }
 }
 
 static int myisortcmp (const void * a, const void * b) {
@@ -141,18 +151,9 @@ void ssort(char* arr[], int n, bool ignorecase) {
         qsort(arr, n, sizeof(const char*), myssortcmp);
 }
 
-
-int countchar(char *buf, char *targ) {
-    int count = 0;
-    char *tmp = buf;
-    while(tmp = strstr(tmp, targ))
-    {
-       count++;
-       tmp++;
-    }
-    return count;
-}
-
+/*
+        STRINGS
+*/
 
 char *strrev(char *str) {
     int i=0, j=0;
@@ -187,7 +188,7 @@ char *trim(char *s) {
     return rtrim(ltrim(s));
 }
 
-char *rightof(char *in, char *targ, int start) {
+char *rightof(char *out, char *in, char *targ, int start) {
     char *p;
     char *s;
 
@@ -196,19 +197,37 @@ char *rightof(char *in, char *targ, int start) {
     if (p == NULL)
         return NULL;
     p += strlen(targ);
+    strcpy(out, p);
     return p;  // *in remains unchanged
 }
 
-char *leftof(char *in, char *targ, int start) {
-    static char s[MAX_L];  // work buffer
+char *leftof(char *out, char *in, char *targ, int start) {
     char *p;
+    int len = 0;
 
-    strcpy(s, in + start);
-    p = strstr(s, targ);
+    in += start;
+    p = strstr(in, targ);
     if (p == NULL)
         return NULL;
-    *p = '\0';
-    return s;  // *in remains unchanged
+    len = p - in;
+    strncpy(out, in, len);
+    out[len] = '\0';
+    return out;  // *in remains unchanged
+}
+
+
+int replacesz(char *base, char *target, char *replacement, int nbr) {
+    // calculate new string size for memory allocation
+    int sz_targ = strlen(target);
+    int sz_repl = strlen(replacement);
+    int count = 0;
+
+    if (nbr == 0)
+        count = contains(base, target);
+    else
+        count = nbr;
+
+    return strlen(base) + (count * (sz_repl - sz_targ)) + 1;
 }
 
 
@@ -220,19 +239,16 @@ char *leftof(char *in, char *targ, int start) {
 *   b: needle string
 *   c: replacement string
 *   number: number of replacements to make (0 means replace all)
-* NOTE: replace will fail if the resulting string length after replacements
-* is greater than MAX_L. 'cstr_replace' does not have this limitation.
+* NOTE: buf must be big enough to hold new string with replacements.
 ***/
 char * replace (char *buf, char *a, char *b, char *c, int number) {
-    char *bfa = calloc(MAX_L, sizeof(char));
-    long lenb = strlen(b);  // length of string to be replaced
     int count = 0;
+    int lenb = strlen(b);  // length of string to be replaced
     char *s = 0;
     char *ap;
     char *p;
-
-    if (!(lenb < MAX_L)) panic("replace inputs out of bounds");
-    if (!(strlen(a) < MAX_L)) panic("replace inputs out of bounds");
+    char *bfa = calloc(strlen(a)+1, sizeof(char));
+    // or char *bfa = strdup(a);
 
     strcpy(bfa, a);
     *buf = '\0';  // initalize return string
@@ -299,8 +315,8 @@ NOTE: to get a single field from a csv string see the field function
 */
 
 // typedef struct clist {
-//     int max_row;    // max lenght of a field
-//     int max_col;    // number of fields
+//     int nbr_rows;  // maximum records (columns, fields)
+//     int len_rows; // maximum length of one record (col, field)
 //     char ** get; // array of fields (array of strings)
 // } clist;
 
@@ -309,11 +325,11 @@ clist clist_init(int col, int len) {
         Return pointer to clist struct
      */
     clist csvf;
-    csvf.max_row = len;
-    csvf.max_col = col;
-    csvf.get = calloc(csvf.max_col, sizeof(char*));  // pointers
-    for(int x=0; x < csvf.max_col; x++) {
-        csvf.get[x] = calloc(csvf.max_row, sizeof(char));
+    csvf.len_rows = len;
+    csvf.nbr_rows = col;
+    csvf.get = calloc(csvf.nbr_rows, sizeof(char*));  // pointers
+    for(int x=0; x < csvf.nbr_rows; x++) {
+        csvf.get[x] = calloc(csvf.len_rows, sizeof(char));
     }
     return csvf;
 }
@@ -376,7 +392,7 @@ int clist_parse(clist csvf, char *str, char *delim) {
     char * found;
 
     if (strlen(delim) != 1) {
-        panic("clist_parse delimiter must be length of 1");
+        ERRMSG(99, true, "clist_parse delimiter must be length of 1");
     }
 
     qmark(str, delim[0]);  // hide quoted delimiters
@@ -395,7 +411,7 @@ int clist_parse(clist csvf, char *str, char *delim) {
 
 void clist_display(clist csvf) {
     int x;
-    for(x=0; x < csvf.max_col; x++) {
+    for(x=0; x < csvf.nbr_rows; x++) {
         printf("%03d - [%s] \n", x, csvf.get[x]);
     }
 }
@@ -403,7 +419,7 @@ void clist_display(clist csvf) {
 void clist_cleanup(clist csvf) {
     /* free each column's data then free the column pointer's
     */
-    for(int col=0; col < csvf.max_col; col++) {
+    for(int col=0; col < csvf.nbr_rows; col++) {
         free(csvf.get[col]);
         csvf.get[col] = NULL;
     }
@@ -499,6 +515,89 @@ char * field(char *r, char * s, char deli, int coln, bool strip) {
    }  // end while
 }    // end field
 
+int isfile(const char* name)
+{
+    DIR* directory = opendir(name);
+
+    if(directory != NULL) {
+     closedir(directory);
+     return 0;
+    }
+    if(errno == ENOTDIR) {
+     return 1;
+    }
+    return -1;
+}
+
+int pathsize(const char *path, int dtype) {
+    struct dirent *de;
+    int count = 0;
+    char fpath[256];
+    DIR *dr = opendir(path);
+    if (dr == NULL)  {
+        return 0;
+    }
+    while ((de = readdir(dr)) != NULL) {
+        if (strcmp(de->d_name, ".") != 0 && strcmp(de->d_name, "..") != 0) {
+            strcpy(fpath, path);
+            strcat(fpath, de->d_name);
+            if (dtype == 0) {
+                count++;
+            } else if (dtype == 1 && isfile(fpath)) {
+                count++;
+            } else if (dtype == 2 && !isfile(fpath)) {
+                count++;
+            } else {
+                continue;
+            }
+        }
+    }
+    closedir(dr);
+    return count;
+}
+
+clist clist_dir(const char *path, int dtype, bool sort) {
+    /*
+     dir = 0 files and directories
+     dir = 1 just files
+     dir = 2 just directories
+    */
+    struct dirent *de;
+    int n = 0;
+
+    clist plst = clist_init(pathsize(path, dtype), 256);
+    DIR *dr = opendir(path);
+    char fpath[256];
+
+    if (dr == NULL)  {
+        ERRMSG(errno, true, "invalid path for clist_dir");
+    }
+    while ((de = readdir(dr)) != NULL)
+        if (strlen(de->d_name) < plst.len_rows) {
+            if (strcmp(de->d_name, ".") != 0 && strcmp(de->d_name, "..") != 0) {
+                strcpy(fpath, path);
+                strcat(fpath, de->d_name);
+                if (dtype == 0) {
+                    strcpy(plst.get[n++], de->d_name);
+                } else if (dtype == 1 && isfile(fpath)) {
+                    strcpy(plst.get[n++], de->d_name);
+                } else if (dtype == 2 && !isfile(fpath)) {
+                    strcpy(plst.get[n++], de->d_name);
+                } else {
+                    continue;
+                }
+            }
+        } else {
+            ERRMSG(99, true, "path > 256 for clist_dir");
+        }
+
+    closedir(dr);
+    if (sort) {
+        printf("%d\n", plst.nbr_rows);
+        ssort(plst.get, plst.nbr_rows, true);
+    }
+    return plst;
+}
 
 bool file_exists (char *filename) {
   struct stat   buffer;
@@ -507,17 +606,18 @@ bool file_exists (char *filename) {
 
 
 FILE * open_for_read(char *fname) {
-    if (!file_exists(fname)) {
-        panic("open_for_read: No file or misspelled");
+    FILE *f1;
+    if ((f1 = fopen(fname,"r")) == NULL) {
+        ERRMSG(errno, true, "open_for_read: error from fopen");
     }
-    return fopen(fname,"rb");
+    return f1;
 }
 
 
 FILE * open_for_append(char *fname) {
     FILE *f1;
     if ((f1 = fopen(fname,"ab")) == NULL) {
-        panic("open_for_append: error on fopen");
+        ERRMSG(errno, true, "open_for_append: error on fopen");
     }
     return f1;
 }
@@ -526,7 +626,7 @@ FILE * open_for_append(char *fname) {
 FILE * open_for_write(char *fname) {
     FILE *f1;
     if ((f1 = fopen(fname,"wb")) == NULL) {
-        panic("open_for_write: error on fopen");
+        ERRMSG(errno, true, "open_for_write: error on fopen");
     }
     return f1;
 }
@@ -535,7 +635,7 @@ FILE * open_for_write(char *fname) {
 int readfile(char *buffer, const char *filename) {
     FILE *f;
     if ((f = fopen(filename,"rb")) == NULL) {
-        printf("\nError trying to open %s\n\n", filename);
+        ERRMSG(errno, false, "fopen: error on readfile");
         return -1;
     }
     fseek(f, 0, SEEK_END);
@@ -555,11 +655,11 @@ int writefile(char *buffer, const char *filename, bool append) {
     FILE *f1;
     if (append) {
         if ((f1 = fopen(filename,"ab")) == NULL) {
-            panic("open_for_write: error on writefile append");
+            ERRMSG(errno, true, "fopen: error on writefile append");
         }
     } else {
         if ((f1 = fopen(filename,"wb")) == NULL) {
-            panic("open_for_write: error on writefile");
+            ERRMSG(errno, true, "fopen: error on writefile");
         }
     }
     fprintf(f1,"%s", buffer);
@@ -569,9 +669,34 @@ int writefile(char *buffer, const char *filename, bool append) {
 
 
 char* chomp(char *line) {  // see also rtrim()
-    // Remove very last character of a string
-    line[strlen(line) - 1] = '\0';
-    return line;
+    // remove record separators
+    size_t len = strlen(line);
+    char *tmp = line;
+    for(int x=len; x >= 0; x--) {
+        if (strchr("\r\n", tmp[x]) == NULL ) {
+            break;
+        } else {
+            tmp[x] = '\0';
+        }
+    }
+    return tmp;
+}
+
+
+char *concat(char *dest, int num, ...) {
+    char *p = dest;
+    va_list ap;
+
+    va_start(ap, num);
+
+    strcpy(p, va_arg(ap, char*));  // first one
+
+    for(int x=0; x < num-1; x++) {
+        strcat(p, va_arg(ap, char*));
+    }
+
+    va_end(ap);
+    return p;
 }
 
 
@@ -599,14 +724,14 @@ char * deletechar(char *s, char *in, char targ, int number) {
 }
 
 
-char* today() {  // returns yyyy-mm-dd
+char* date(const char* format) {  // see man strftime
     time_t rawtime;
     struct tm *info;
     static char buffer[80];
 
     time( &rawtime );
     info = localtime( &rawtime );
-    strftime(buffer, 80, "%F", info);
+    strftime(buffer, 80, format, info);
     return buffer;
 }
 
@@ -617,9 +742,24 @@ char* today() {  // returns yyyy-mm-dd
 * after sec seconds. "sec" is passed along
 * to "f" the user handler function.
 ***/
-void timeout(int sec, void f(int)) {  // receive address of print
+void timeout(int sec, void f()) {
     signal(SIGALRM, f);
     alarm(sec);
+}
+
+
+void multifree(int num, ...) {
+  va_list ap;
+  int i = 0;
+  char *p;
+
+  va_start(ap, num);
+  for (i=0; i < num; i++) {
+    p = va_arg(ap, char*);
+    free(p);
+    p = NULL;
+  }
+  va_end(ap);
 }
 
 
@@ -632,6 +772,21 @@ bool endswith (char* base, char* str) {
     int blen = strlen(base);
     int slen = strlen(str);
     return (blen >= slen) && (0 == strcmp(base + blen - slen, str));
+}
+
+
+int contains(char *s, char *targ) {
+    int tlen = strlen(targ);
+    int count = 0;
+    char *p = s;
+
+    while(true) {
+        p = strstr(p, targ);
+        if (p == NULL)
+            return count;
+        count++;
+        p += tlen;
+    }
 }
 
 
@@ -703,8 +858,8 @@ char *substr(char *p, char *string, int position, int length) {
    int c;
    int len = strlen(string);
 
-   if (!(len < MAX_L)) panic("substr inputs out of bounds");
-   if (!(position + length < len)) panic("substr inputs out of bounds");
+   if (!(position + length < len))
+        ERRMSG(99, true, "substr inputs out of bounds");
 
    if (length == 0) {  // from position to end of string
 
@@ -754,165 +909,40 @@ bool equalsignorecase(char *str1, char *str2) {
 }
 
 
-char* urlencode(char* originalText) {
-    static char encodedText[MAX_L] = {"\0"};
-
+char* urlencode(char* dest, char* urltext) {
+    char *pout = dest;
     char *hex = "0123456789abcdef";
 
     int pos = 0;
-    for (int i = 0; i < strlen(originalText); i++) {
-        if (('a' <= originalText[i] && originalText[i] <= 'z')
-            || ('A' <= originalText[i] && originalText[i] <= 'Z')
-            || ('0' <= originalText[i] && originalText[i] <= '9')) {
-                encodedText[pos++] = originalText[i];
+    for (int i = 0; i < strlen(urltext); i++) {
+        if (('a' <= urltext[i] && urltext[i] <= 'z')
+            || ('A' <= urltext[i] && urltext[i] <= 'Z')
+            || ('0' <= urltext[i] && urltext[i] <= '9')) {
+                pout[pos++] = urltext[i];
             } else {
-                encodedText[pos++] = '%';
-                encodedText[pos++] = hex[originalText[i] >> 4];
-                encodedText[pos++] = hex[originalText[i] & 15];
+                pout[pos++] = '%';
+                pout[pos++] = hex[urltext[i] >> 4];
+                pout[pos++] = hex[urltext[i] & 15];
             }
     }
-    encodedText[pos] = '\0';
-    return encodedText;
+    pout[pos] = '\0';
+    return pout;
 }
 
 
-
-/***
-* EXTENDED STRING FUNCTIONS
-* Each string is allocated and managed
-* within a struct of type cstr. Along with
-* its functions (below) this provides a safer
-* way to manipulate a char array when attempting
-* actions that may cause buffer overflow.
-*   cstr_init
-*   cstr_fill
-*   cstr_copy
-*   cstr_insert
-*   cstr_prepend
-*   cstr_append
-*   cstr_replace
-*   cstr_cleanup
-* Other string.h and myc.h functions can be
-* used on a cstr string as well but without
-* the added safty of the cstr functions.
-***/
-
- // DECLARED AT TOP OF THIS FILE
-// typedef struct cstr {
-//     size_t length;  // allocated length
-//     char *str;
-// } cstr;
-
-cstr cstr_init(size_t len, char fill) {
-    cstr cs;
-    cs.length = len;
-    cs.str = calloc(len, sizeof(char));
-    memset(cs.str, fill, len);
-    *(cs.str+len) = '\0';
-    return cs;
+char *insert(char *buf, char *s, char *ins, size_t inx) {
+    size_t actual = strlen(s + inx);
+    size_t new = strlen(ins);
+    char *str = calloc(strlen(s) + strlen(ins) + 1, sizeof(char));
+    strcpy(str, s);
+    char *p = str + inx; // point of insertion
+    memmove(p + new, p, actual + 1);
+    memcpy(p, ins, new);
+    strcpy(buf, str);
+    free(str);
+    return buf;
 }
 
-void cstr_cleanup(cstr cs) {
-    cs.length = 0;
-    free(cs.str);
-    cs.str = NULL;
-}
-
-void cstr_fill(cstr cs, char c) {
-    memset(cs.str, c, sizeof(char) * cs.length);
-    *(cs.str+cs.length) = '\0';
-}
-
-bool cstr_append(cstr cs, char * s) {
-    size_t actual = strlen(cs.str);
-    size_t new = strlen(s);
-    if (actual + new > cs.length - 1) {
-        return false;
-    } else {
-        strcat(cs.str, s);
-        return true;
-    }
-}
-
-bool cstr_copy(cstr cs, char *s) {
-    size_t new = strlen(s);
-    if (new > cs.length - 1) {
-        return false;
-    } else {
-        strcpy(cs.str, s);
-        return true;
-    }
-}
-
-bool cstr_prepend(cstr cs, char * s) {
-    size_t actual = strlen(cs.str);
-    size_t new = strlen(s);
-    if (actual + new > cs.length - 1) {
-        return false;
-    } else {
-        memmove(cs.str + new, cs.str, actual + 1);
-        memcpy(cs.str, s, new);
-        return true;
-    }
-}
-
-bool cstr_insert(cstr cs, char *s, size_t inx) {
-    size_t actual = strlen(cs.str + inx);
-    size_t new = strlen(s);
-    char *p = cs.str + inx; // update to index position
-    if (actual + new > cs.length - 1) {
-        return false;
-    } else {
-        memmove(p + new, p, actual + 1);
-        memcpy(p, s, new);
-        return true;
-    }
-}
-
-
-/*
-    Unlike the "replace" function (above) this one works only
-    with strings created with CstrInit().
-    Also here the maximum string length is determined by cstr.length
-    so the MAX_L limit does not exist.
-*/
-void cstr_replace(cstr cs, char *b, char *c, int number) {
-    char *buf = calloc(cs.length, sizeof(char));
-    char *bfa = calloc(cs.length, sizeof(char));
-    size_t lenb = strlen(b);  // length of string to be replaced
-    size_t count = 0;
-    char *ap;
-    char *p;
-    char *s;
-
-    if (!(lenb < cs.length)) panic("replace inputs out of bounds");
-    if (!(strlen(cs.str) < cs.length)) panic("replace inputs out of bounds");
-
-    strcpy(bfa, cs.str);
-    s = ap = bfa;
-
-    while(1) {
-        p = strstr(s, b);
-        if (p == NULL) {
-            break;
-        }
-        *p = '\0';
-        strcat(buf, ap);  // building output buffer
-        strcat(buf, c);  // with leading string and 1st replacement
-        ap = p + lenb;  // increment pointer past the target string
-        s = ap;  // s becomes ap
-        count++;
-        if (number > 0 && count >= number) {
-            break;
-        }
-    }
-
-    strcat(buf, ap);  // concatenate final segment
-    // copy result to cstr.str and clean up memory
-    strcpy(cs.str, buf);
-    free(bfa);
-    free(buf);
-}
 
 /***
 * functions for string
@@ -938,6 +968,9 @@ int strtype(char *buf, int istype) {
     size_t count = 0;
 
     len = strlen(buf);
+
+    if (buf[0] == 0x0)
+        return 0;
 
     switch (istype) {
         case ALPHA:
@@ -997,7 +1030,7 @@ int strtype(char *buf, int istype) {
             }
             break;
         default:
-            panic("invalid strtype enum value");
+            ERRMSG(99, true, "invalid strtype enum value");
     }
     if (count == len) return -1;  // entire alpha
     return count;  // will be > -1 and less than len
