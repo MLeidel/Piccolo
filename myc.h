@@ -18,6 +18,7 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <limits.h>
+#include <locale.h>
 
 
   // DECLARATIONS
@@ -25,21 +26,23 @@
 // STRING FUNCTIONS
 bool endswith (char*, char*);
 bool equals(char*, char*);
-bool equalsignorecase(char*, char*);
+bool equalsignore(char*, char*);
 bool startswith (char*, char*);
 char* chomp(char*);
 char* concat(char*, int, ...);
-char* deletechar(char*, char*, char, int);
+char* deletechar(char*, char*, char*, size_t, size_t);
 char* field(char*, char*, char, int, bool);
 char* insert(char*, char*, char*, size_t);
+char* insert_new(char*, char*, size_t);
+char* lastsub(char*, char*);
 char* lowercase(char*);
 char* leftof(char*, char*, char*, int);
 char* ltrim(char*);
-char* replace (char*, char*, char*, char*, int);
+char* replace(char*, char*, char*, char*, size_t, size_t);
+char* replace_new (char*, char*, char*, size_t, size_t);
 char* rightof(char*, char*, char*, int);
 char* rtrim(char*);
 char* strrev(char*);
-char* strrstr(char*, char*);
 char* substr(char*, char*, int, int);
 char* trim(char*);
 char* uppercase(char*);
@@ -49,31 +52,57 @@ int contains(char*, char*);
 int indexof (char*, char*);
 int lastcharat(char*, char);
 int lastindexof (char*, char*);
-int replacechar(char*, char, char, int);
+int replacechar(char*, char, char, size_t);
 int replacesz(char *, char *, char *, int);
 int strtype(char*, int);
+
+// NUMBER TO STRING CONVERSIONS
+char* intstr(char*, int, bool);
+char* instr_new(int, bool);
+char* lngstr(char*, long, bool);
+char* lngstr_new(long, bool);
+char* dblstr(char*, double, int, bool);
+char* dblstr_new(double, int, bool);
+
+// STRING ALLOCATION
+typedef struct {
+    size_t length;  // allocated length
+    char *str;
+} cstr;
+
+bool cstr_cpy(cstr, char*);
+cstr cstr_def(const char*);
+void cstr_del(cstr);
+cstr cstr_new(size_t, char);
+cstr cstr_rsz(cstr, size_t);
+cstr cstr_wrp(char*, size_t, char);
+
 
 // ARRAY FUNCTIONS
 
     // ARRSIZE(x) THIS IS A MACRO
 
-typedef struct clist {
+typedef struct aros {
     int nbr_rows;  // maximum records (columns, fields)
     int len_rows; // maximum length of one record (col, field)
-    char** get;  // array of fields (char arrays or strings)
-} clist;
+    char** item;  // array of fields (char arrays or strings)
+} aros;
 
-clist clist_init(int, int);
-clist clist_dir(const char*, int, bool);
-int clist_parse(clist, char*, char*);
-void clist_display(clist);
-void clist_cleanup(clist);
+aros aros_new(int, int);
+aros aros_dir(const char*, int, bool);
+int aros_parse(aros, char*, char*);
+void aros_display(aros);
+void aros_del(aros);
 
 // FILE & PATH FUNCTIONS
 bool file_exists (char*);
 FILE * open_for_append(char*);
 FILE * open_for_read(char*);
 FILE * open_for_write(char*);
+long filesize(const char*);
+char* getbasename(char*, bool);
+char* getbasepath(char*, char*);
+char* getfullpath(char*, char*);
 int isfile(const char*);
 int pathsize(const char*, int);
 int readfile(char*, const char*);
@@ -98,7 +127,8 @@ char *realpath(const char *restrict path, char *restrict resolved_path);
         // realpath(filename, buff) // returns NULL on error
 char *getenv(const char *name)
         // sprintf(descq_path, "%s/.config/descq", getenv("HOME"));
-/*\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/*/
+---------------------------------------------------------------------------
+*/
 
 /*
             MACROS, DEFINES, AND UTILITIES
@@ -108,11 +138,17 @@ char *getenv(const char *name)
 #define ERRMSG(a, b, c) (errmsg(a, b, c, __LINE__))
 
 void errmsg(int rc, bool quit, char *msg, int line) {
+    char em[64];
+    if( rc == -1 ) {
+        strcpy(em, "application defined");
+    } else {
+        strcpy(em, strerror(rc));
+    }
     fprintf(stderr,
         "ERRMSG near line: %d, errno: %d %s\n%s\n",
         line,
         rc,
-        strerror(rc),
+        em,
         msg
         );
     if (quit) {  // print additional line and terminate program
@@ -155,6 +191,89 @@ void ssort(char* arr[], int n, bool ignorecase) {
         STRINGS
 */
 
+cstr cstr_def(const char *str) {
+    cstr s;
+    int length = strlen(str);
+    if (length == 0) {
+        ERRMSG(-1, true, "cstr_def malloc error 0 length");
+    }
+    s.str = malloc((length + 1) * sizeof(char));
+    if (s.str == NULL) {
+        ERRMSG(errno, true, "cstr_def malloc error");
+    }
+    strcpy(s.str, str);
+    s.length = length;
+    return s;
+}
+
+cstr cstr_new(size_t length, char fill) {
+    cstr s;
+    if (length == 0) {
+        ERRMSG(-1, true, "cstr_new malloc error 0 length");
+    }
+    s.str = malloc(length * sizeof(char));
+    if (s.str == NULL) {
+        ERRMSG(errno, true, "cstr_new malloc error");
+    }
+    s.length = length;
+    memset(s.str, fill, s.length);
+    return s;
+}
+
+cstr cstr_rsz(cstr p, size_t length) {
+    cstr z = p;
+    if (length == 0) {
+        ERRMSG(-1, true, "cstr_rsz realloc error 0 length");
+    }
+    z.str = realloc(p.str, length * sizeof(char));
+    if (z.str == NULL) {
+        ERRMSG(errno, true, "cstr_rsz realloc error");
+    }
+    z.length = length;
+    return z;
+}
+
+bool cstr_cpy(cstr s, char *data) {
+    size_t len;
+    len = strlen(data);
+    if (len > s.length - 1) {
+        fprintf(stderr,"\ncstr_cpy boundary error\n");
+        return false;
+    }
+    strcpy(s.str, data);
+    return true;
+}
+
+void cstr_del(cstr s) {
+    free(s.str);
+    s.str = NULL;
+    s.length = 0;
+}
+
+cstr cstr_wrp(char *in, size_t length, char sep) {
+    int pos = 0, cinx = 0, linx = 0;
+    int textsize = strlen(in);
+    int newsize = ((textsize / length) + 1) * 3; // space + newline of 1 or 2 chars
+
+    cstr cout = cstr_new(textsize + newsize, '\0');
+
+    replacechar(in, sep, ' ', 0); // remove existing newlines
+
+    while( in[pos] != '\0') {
+
+        if(++linx > length) {
+            while( in[pos] != ' ') { pos--; cinx--; }
+            linx = 0;
+            cout.str[cinx++] = sep;
+            pos++;
+        } else {
+            cout.str[cinx++] = in[pos++];
+        }
+    }
+    return cout;
+}
+
+
 char *strrev(char *str) {
     int i=0, j=0;
     char temp;
@@ -177,6 +296,7 @@ char *ltrim(char *s) {
     return forward-1;
 }
 
+
 char *rtrim(char *s) {
     char* back = s + strlen(s);
     while(isspace(*--back));
@@ -184,9 +304,11 @@ char *rtrim(char *s) {
     return s;
 }
 
+
 char *trim(char *s) {
     return rtrim(ltrim(s));
 }
+
 
 char *rightof(char *out, char *in, char *targ, int start) {
     char *p;
@@ -200,6 +322,7 @@ char *rightof(char *out, char *in, char *targ, int start) {
     strcpy(out, p);
     return p;  // *in remains unchanged
 }
+
 
 char *leftof(char *out, char *in, char *targ, int start) {
     char *p;
@@ -240,8 +363,9 @@ int replacesz(char *base, char *target, char *replacement, int nbr) {
 *   c: replacement string
 *   number: number of replacements to make (0 means replace all)
 * NOTE: buf must be big enough to hold new string with replacements.
+* ALSO: see 'replace_new'
 ***/
-char * replace (char *buf, char *a, char *b, char *c, int number) {
+char * replace (char *buf, char *a, char *b, char *c, size_t start, size_t number) {
     int count = 0;
     int lenb = strlen(b);  // length of string to be replaced
     char *s = 0;
@@ -254,6 +378,47 @@ char * replace (char *buf, char *a, char *b, char *c, int number) {
     *buf = '\0';  // initalize return string
 
     s = ap = bfa;
+    s += start;
+
+    while(1) {
+        p = strstr(s, b);
+        if (p == NULL) {
+            break;
+        }
+        *p = '\0';
+        strcat(buf, ap);  // building output buffer
+        strcat(buf, c);  // with leading string and 1st replacement
+        ap = p + lenb;  // increment pointer past the target string
+        s = ap;  // s becomes ap
+        count++;
+        if (number != 0 && count >= number) {
+            break;
+        }
+    }
+
+    strcat(buf, ap);  // concatenate final segment
+    free(bfa);
+    bfa = NULL;
+    return buf;
+}
+
+char * replace_new (char *a, char *b, char *c, size_t start, size_t number) {
+    int count = 0;
+    int lenb = strlen(b);  // length of string to be replaced
+    char *s = 0;
+    char *ap;
+    char *p;
+    char *bfa = calloc(strlen(a)+1, sizeof(char));
+    // or char *bfa = strdup(a);
+
+    int newlen = replacesz(a, b, c, number);
+    char *buf = calloc(newlen, sizeof(char));
+
+    strcpy(bfa, a);
+    *buf = '\0';  // initalize return string
+
+    s = ap = bfa;
+    s += start;
 
     while(1) {
         p = strstr(s, b);
@@ -278,8 +443,7 @@ char * replace (char *buf, char *a, char *b, char *c, int number) {
 }
 
 
-int replacechar(char *a, char b, char c, int number) {
-    int len = strlen(a);
+int replacechar(char *a, char b, char c, size_t number) {
     char *p;
     int count = 0;
 
@@ -297,7 +461,18 @@ int replacechar(char *a, char b, char c, int number) {
 }
 
 
-/*  clist: Parses out values from a csv string
+/***
+* Demo of aros
+* Using an enum to identify fields
+*
+* typedef struct aros {
+*   int nbr_rows;  // maximum rows (columns, fields)
+*   int len_rows; // maximum length of one row (col, field)
+*   char ** get; // array of strings (fields)
+* } aros;
+***/
+
+/*  aros: Parses out values from a csv string
     that may use double quotes for explicit text.
     Delimiters inside double quoted fields are
     ignored.
@@ -305,31 +480,31 @@ int replacechar(char *a, char b, char c, int number) {
 example:
 
 char * line; // some input csv string
-clist list = clist_init(5, 64);
-clist_parse(list, line, ",");  // returns nbr of cols found
-    list.get[0] would be the first field
-clist_cleanup(list);  // free dynamic memory
+aros list = aros_new(5, 64);
+aros_parse(list, line, ",");  // returns nbr of cols found
+    list.item[0] would be the first field
+aros_del(list);  // free dynamic memory
 
 NOTE: the supplied input csv string is destroyed in the parsing
-NOTE: to get a single field from a csv string see the field function
+NOTE: to extract a single field from a csv string see the field function
 */
 
-// typedef struct clist {
+// typedef struct aros {
 //     int nbr_rows;  // maximum records (columns, fields)
 //     int len_rows; // maximum length of one record (col, field)
-//     char ** get; // array of fields (array of strings)
-// } clist;
+//     char ** item; // array of fields (array of strings)
+// } aros;
 
-clist clist_init(int col, int len) {
+aros aros_new(int col, int len) {
      /* Initialize variables and allocate memory
-        Return pointer to clist struct
+        Return pointer to aros struct
      */
-    clist csvf;
+    aros csvf;
     csvf.len_rows = len;
     csvf.nbr_rows = col;
-    csvf.get = calloc(csvf.nbr_rows, sizeof(char*));  // pointers
+    csvf.item = calloc(csvf.nbr_rows, sizeof(char*));  // pointers
     for(int x=0; x < csvf.nbr_rows; x++) {
-        csvf.get[x] = calloc(csvf.len_rows, sizeof(char));
+        csvf.item[x] = calloc(csvf.len_rows, sizeof(char));
     }
     return csvf;
 }
@@ -366,7 +541,7 @@ char * qmark(char * str, char delim) {
 int qunmark(char **str, int sz, char delim) {
     /* Un-hides the delimiters found within dbl quotes
        of fields now residing in the fields array/list.
-       Called from clist.
+       Called from aros.
     */
     char **p = str;
     char *t;
@@ -385,14 +560,14 @@ int qunmark(char **str, int sz, char delim) {
     return count;
 }
 
-int clist_parse(clist csvf, char *str, char *delim) {
+int aros_parse(aros csvf, char *str, char *delim) {
     /*  parse the csv fields into the array elements
     */
     int finx = 0;
     char * found;
 
     if (strlen(delim) != 1) {
-        ERRMSG(99, true, "clist_parse delimiter must be length of 1");
+        ERRMSG(-1, true, "aros_parse delimiter must be length of 1");
     }
 
     qmark(str, delim[0]);  // hide quoted delimiters
@@ -401,33 +576,32 @@ int clist_parse(clist csvf, char *str, char *delim) {
         if( delim[0] == ' ' && *found == '\0' ) {  // handle ' ' delimiter
             continue;  // handle consecutive space as one delimiter
         }
-        strcpy(csvf.get[finx++], trim(found));
+        strcpy(csvf.item[finx++], trim(found));
     }
 
-    qunmark(csvf.get, finx, delim[0]);  // put back hidden delimiters
+    qunmark(csvf.item, finx, delim[0]);  // put back hidden delimiters
 
     return finx;
 }
 
-void clist_display(clist csvf) {
+void aros_display(aros csvf) {
     int x;
     for(x=0; x < csvf.nbr_rows; x++) {
-        printf("%03d - [%s] \n", x, csvf.get[x]);
+        printf("%03d - [%s] \n", x, csvf.item[x]);
     }
 }
 
-void clist_cleanup(clist csvf) {
+void aros_del(aros csvf) {
     /* free each column's data then free the column pointer's
     */
     for(int col=0; col < csvf.nbr_rows; col++) {
-        free(csvf.get[col]);
-        csvf.get[col] = NULL;
+        free(csvf.item[col]);
+        csvf.item[col] = NULL;
     }
-    free(csvf.get);
-    csvf.get = NULL;
+    free(csvf.item);
+    csvf.item = NULL;
 }
-/*================= END clist .. etc. ====================*/
-
+/*================= END aros .. etc. ====================*/
 
 int qunmark1(char *str, char delim) {
     /*  1d array version of qunmark
@@ -556,7 +730,7 @@ int pathsize(const char *path, int dtype) {
     return count;
 }
 
-clist clist_dir(const char *path, int dtype, bool sort) {
+aros aros_dir(const char *path, int dtype, bool sort) {
     /*
      dir = 0 files and directories
      dir = 1 just files
@@ -565,12 +739,12 @@ clist clist_dir(const char *path, int dtype, bool sort) {
     struct dirent *de;
     int n = 0;
 
-    clist plst = clist_init(pathsize(path, dtype), 256);
+    aros plst = aros_new(pathsize(path, dtype), 256);
     DIR *dr = opendir(path);
     char fpath[256];
 
     if (dr == NULL)  {
-        ERRMSG(errno, true, "invalid path for clist_dir");
+        ERRMSG(errno, true, "invalid path for aros_dir");
     }
     while ((de = readdir(dr)) != NULL)
         if (strlen(de->d_name) < plst.len_rows) {
@@ -578,23 +752,23 @@ clist clist_dir(const char *path, int dtype, bool sort) {
                 strcpy(fpath, path);
                 strcat(fpath, de->d_name);
                 if (dtype == 0) {
-                    strcpy(plst.get[n++], de->d_name);
+                    strcpy(plst.item[n++], de->d_name);
                 } else if (dtype == 1 && isfile(fpath)) {
-                    strcpy(plst.get[n++], de->d_name);
+                    strcpy(plst.item[n++], de->d_name);
                 } else if (dtype == 2 && !isfile(fpath)) {
-                    strcpy(plst.get[n++], de->d_name);
+                    strcpy(plst.item[n++], de->d_name);
                 } else {
                     continue;
                 }
             }
         } else {
-            ERRMSG(99, true, "path > 256 for clist_dir");
+            ERRMSG(-1, true, "path > 256 for aros_dir");
         }
 
     closedir(dr);
     if (sort) {
         printf("%d\n", plst.nbr_rows);
-        ssort(plst.get, plst.nbr_rows, true);
+        ssort(plst.item, plst.nbr_rows, true);
     }
     return plst;
 }
@@ -667,6 +841,68 @@ int writefile(char *buffer, const char *filename, bool append) {
     return 0;
 }
 
+long filesize(const char *filename) {
+    FILE *f;
+    if ((f = fopen(filename,"rb")) == NULL) {
+        ERRMSG(errno, false, "fopen: error on filesize function");
+        return -1;
+    }
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    fclose(f);
+    return fsize;
+}
+
+/*
+  just a "replay" of realpath function
+*/
+char *getfullpath(char *fn, char *buff) {
+    return realpath(fn, buff);
+}
+
+
+char* getbasename(char *fn, bool withext) {
+    char *s = strrchr(fn, '/');  // find the last "/" in the path
+    char *p = strrchr(fn, '.');  // last "." in path
+
+    if (withext) {  // WITH extension
+
+        if (s == NULL) { // no path present
+            return fn;   // already base - nothing to do
+        } else {         // path present
+            return ++s;  // return past end of path/
+        }
+
+    } else {  // WITHOUT extension
+
+        if (s == NULL) {     // no path present
+            if (p == NULL) { // no ext present
+                return fn;   // already base & no ext - nothing to do
+            } else {         // ext is present
+                *p = '\0';   // cut off extension at '.'
+                return fn;
+            }
+        } else {             // path present
+            if (p == NULL) { // no no extension present
+                return ++s;  // already base & no ext - nothing to do
+            } else {
+                *p = '\0';   // cut off extension at '.'
+                return ++s;
+            }
+        }
+    }
+}
+
+
+char *getbasepath(char *fn, char *buff) {
+    realpath(fn, buff);
+    char *s = strrchr(buff, '/');  // find the last "/" in the path
+    if (s != NULL) {
+        *s = '\0';
+    }
+    return buff;
+}
+
 
 char* chomp(char *line) {  // see also rtrim()
     // remove record separators
@@ -689,7 +925,7 @@ char *concat(char *dest, int num, ...) {
 
     va_start(ap, num);
 
-    strcpy(p, va_arg(ap, char*));  // first one
+    strcat(p, va_arg(ap, char*));  // first one
 
     for(int x=0; x < num-1; x++) {
         strcat(p, va_arg(ap, char*));
@@ -700,15 +936,21 @@ char *concat(char *dest, int num, ...) {
 }
 
 
-char * deletechar(char *s, char *in, char targ, int number) {
+char * deletechar(char *s, char *in, char *targ, size_t start, size_t number) {
    char *t = s;
    char *p = in;
    int len = strlen(p);
    int newlen = len;
-   int count = 0;
+   int count = 0, x = 0;
 
-   for(int x=0; x < len; x++) {
-      if (*p == targ) {
+   for(x=0; x < start; x++) {
+      *t = *p;  // copy char before start index, if any
+      t++;
+      p++;
+   }
+
+   for(x = start; x < len; x++) {
+      if (strchr(targ, *p)) {
         if ( number == 0 || (number > 0 && ++count <= number) ) {
            p++;
            newlen--;
@@ -780,6 +1022,9 @@ int contains(char *s, char *targ) {
     int count = 0;
     char *p = s;
 
+    if (tlen < 1)
+        return 0;
+
     while(true) {
         p = strstr(p, targ);
         if (p == NULL)
@@ -790,11 +1035,11 @@ int contains(char *s, char *targ) {
 }
 
 
-char * strrstr(char *s, char *t) {
-    // does not come with gcc as far as I know
-    char *p, *r;
+char * lastsub(char *s, char *t) {
+    // strrstr does not come with gcc as far as I know
+    char *r;
     char *i = NULL;
-    p = s;
+
     while (1) {
         r = strstr(s, t);
         if (r == NULL) {
@@ -822,7 +1067,7 @@ int indexof(char* base, char* str) {
 int lastindexof (char* base, char* str) {
     // find the last 'index' of a string in a string
     char *p;
-    p = strrstr(base, str);
+    p = lastsub(base, str);
     if (p == NULL) {
         return -1;
     } else {
@@ -859,13 +1104,11 @@ char *substr(char *p, char *string, int position, int length) {
    int len = strlen(string);
 
    if (!(position + length < len))
-        ERRMSG(99, true, "substr inputs out of bounds");
+        ERRMSG(-1, true, "substr inputs out of bounds");
 
    if (length == 0) {  // from position to end of string
-
       strcpy(p, string + position);
       return p;
-
    }
 
    for (c = 0; c < length; c++) {  // return position for length
@@ -904,7 +1147,7 @@ bool equals(char *str1, char *str2) {
 }
 
 
-bool equalsignorecase(char *str1, char *str2) {
+bool equalsignore(char *str1, char *str2) {
     return (strcasecmp(str1, str2) == 0);
 }
 
@@ -931,16 +1174,27 @@ char* urlencode(char* dest, char* urltext) {
 
 
 char *insert(char *buf, char *s, char *ins, size_t inx) {
-    size_t actual = strlen(s + inx);
-    size_t new = strlen(ins);
+    size_t actual = strlen(s + inx); // length of insertion point to end
+    size_t new = strlen(ins); // length of insertion text
     char *str = calloc(strlen(s) + strlen(ins) + 1, sizeof(char));
     strcpy(str, s);
     char *p = str + inx; // point of insertion
-    memmove(p + new, p, actual + 1);
-    memcpy(p, ins, new);
+    memmove(p + new, p, actual + 1); // move over -> text-after-insertion
+    memcpy(p, ins, new); // move in text to insert
     strcpy(buf, str);
     free(str);
     return buf;
+}
+
+char *insert_new(char *s, char *ins, size_t inx) {
+    size_t actual = strlen(s + inx); // length of insertion point to end
+    size_t new = strlen(ins); // length of insertion text
+    char *str = calloc(strlen(s) + strlen(ins) + 1, sizeof(char));
+    strcpy(str, s);
+    char *p = str + inx; // point of insertion
+    memmove(p + new, p, actual + 1); // move over -> text-after-insertion
+    memcpy(p, ins, new); // move in text to insert
+    return str;
 }
 
 
@@ -1030,10 +1284,135 @@ int strtype(char *buf, int istype) {
             }
             break;
         default:
-            ERRMSG(99, true, "invalid strtype enum value");
+            ERRMSG(-1, true, "invalid strtype enum value");
     }
     if (count == len) return -1;  // entire alpha
     return count;  // will be > -1 and less than len
+}
+
+/***
+* converting numbers to strings
+* for both automatic and dynamic memory variables
+* counter parts for:
+*   atoi, atol, atof
+*
+* with decimal precision and thousands separator options
+*
+* intstr and intstr_new
+* lngstr and lngstr_new
+* dblstr and dblstr_new
+***/
+
+/*
+    convert integer to string using automatic memory
+*/
+char *intstr(char *buf, int n, bool separator) {
+    if(separator) {
+        setlocale(LC_NUMERIC, "");
+        sprintf(buf, "%'d", n);
+    } else
+        sprintf(buf, "%d", n);
+    return buf;
+}
+
+/*
+    convert inteter to string using dynamic memory
+*/
+char *intstr_new(int n, bool separator) {
+    int len = snprintf( NULL, 0, "%d", n );
+    char* buf = malloc( len + 1 );
+    if(separator) {
+        setlocale(LC_NUMERIC, "");
+        sprintf(buf, "%'d", n);
+    } else
+        sprintf(buf, "%d", n);
+    return buf;
+}
+
+/*
+    convert long to string using automatic memory
+*/
+char *lngstr(char *buf, long n, bool separator) {
+    if(separator) {
+        setlocale(LC_NUMERIC, "");
+        sprintf(buf, "%'ld", n);
+    } else
+        sprintf(buf, "%ld", n);
+    return buf;
+}
+
+/*
+    convert long to string using dynamic memory
+*/
+char *lngstr_new(long n, bool separator) {
+    int len = snprintf( NULL, 0, "%ld", n );
+    char* buf = malloc( len + 1 );
+    if(separator) {
+        setlocale(LC_NUMERIC, "");
+        sprintf(buf, "%'ld", n);
+    } else
+        sprintf(buf, "%ld", n);
+    return buf;
+}
+
+/*
+    convert double to string using automatic memory
+*/
+char *dblstr(char *buf, double n, int decimal, bool separator) {
+    char fmt[32];
+    if(separator) {
+        setlocale(LC_NUMERIC, "");
+        sprintf(fmt, "%s%d%s", "%'.0", decimal, "lf");
+    } else {
+        sprintf(fmt, "%s%d%s", "%.0", decimal, "lf");
+    }
+    sprintf(buf, fmt, n);
+    return buf;
+}
+
+/*
+    convert double to string using dynamic memory
+*/
+char *dblstr_new(double n, int decimal, bool separator) {
+    char fmt[32];
+    sprintf(fmt, "%s%d%s", "%.0", decimal, "lf");
+    int len = snprintf( NULL, 0, fmt, n );
+    char* buf = malloc( len + 1 );
+    if(separator) {
+        setlocale(LC_NUMERIC, "");
+        sprintf(fmt, "%s%d%s", "%'.0", decimal, "lf");
+    } else {
+        sprintf(fmt, "%s%d%s", "%.0", decimal, "lf");
+    }
+    sprintf(buf, fmt, n);
+    return buf;
+}
+
+/*
+    wraplines reformats lines of text to all have a new line width
+    where lines are separated on word boundaries
+*/
+cstr wraplines(char *in, size_t length, char sep) {
+    int pos = 0, cinx = 0, linx = 0;
+    int textsize = strlen(in);
+    int newsize = ((textsize / length) + 1) * 3; // space + newline of 1 or 2 chars
+
+    cstr cout = cstr_new(textsize + newsize, '\0');
+
+    replacechar(in, sep, ' ', 0); // remove existing newlines
+
+    while( in[pos] != '\0') {
+
+        if(++linx > length) {
+            while( in[pos] != ' ') { pos--; cinx--; }
+            linx = 0;
+            cout.str[cinx++] = sep;
+            pos++;
+        } else {
+            cout.str[cinx++] = in[pos++];
+        }
+    }
+    return cout;
 }
 
 #endif
