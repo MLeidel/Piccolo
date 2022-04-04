@@ -528,13 +528,13 @@ int main(int argc, char *argv[]) {
     fclose(fh);
     chomp(line);  // remove new line character
     // parse out the values
-    aros in = aros_new(4, 16);
-    aros_parse(in, line, ",");
+    list in = list_def(4, 16);
+    list_split(in, line, ",");
     w_left      = atol(in.item[0]);
     w_top       = atol(in.item[1]);
     w_width     = atol(in.item[2]);
     w_height    = atol(in.item[3]);
-    aros_del(in);
+    list_del(in);
 
     gtk_widget_show(window1);
     gtk_window_move(GTK_WINDOW(window1), w_left, w_top);  // set metrics ...
