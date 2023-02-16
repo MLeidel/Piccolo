@@ -1,7 +1,7 @@
 
 # Piccolo
 
-### Small Text Editor for Linux GTK3
+### Linux Debian (gtk) Small Text Editor
 
 Piccolo is a very minimal text editor intended for
 applications requiring a simple display of monospaced
@@ -27,6 +27,7 @@ Piccolo Features:
 | Shift-Ctrl-s | save-as |
 | F2 | search |
 | F3 | next |
+| F5 | Word Wrap |
 | Ctrl-o | open |
 | Ctrl-n | new file |
 | "u" | launch selected URL |

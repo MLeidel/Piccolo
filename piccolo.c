@@ -856,6 +856,15 @@ _Bool on_window1_key_press_event(GtkWidget *w, GdkEvent *e) {
         return TRUE;
     }
 
+    // Toggle Word Wrapping
+    if (keyval == GDK_KEY_F5) {
+        if (gtk_text_view_get_wrap_mode (GTK_TEXT_VIEW(g_tview)) == GTK_WRAP_WORD) {
+          gtk_text_view_set_wrap_mode (GTK_TEXT_VIEW(g_tview), GTK_WRAP_NONE);
+        } else {
+          gtk_text_view_set_wrap_mode (GTK_TEXT_VIEW(g_tview), GTK_WRAP_WORD);
+        }
+        return TRUE;
+    }
     return FALSE;
 }
 
