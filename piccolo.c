@@ -17,7 +17,6 @@
 #include "myc.h"
 #include "gtkcss.h"
 
-#define GDK_KEY_F2 0xffbf
 #define GDK_KEY_F3 0xffc0
 
 char* glade_xml = "\
@@ -348,7 +347,7 @@ and limited text editor</property>\n\
 <property name=\"use_underline\">True</property>\n\
 <property name=\"use_stock\">True</property>\n\
 <signal name=\"activate\" handler=\"on_mu_find_activate\" swapped=\"no\"/>\n\
-<accelerator key=\"F2\" signal=\"activate\"/>\n\
+<accelerator key=\"f\" signal=\"activate\" modifiers=\"GDK_CONTROL_MASK\"/>\n\
 </object>\n\
 </child>\n\
 <child>\n\
@@ -825,7 +824,7 @@ _Bool on_window1_key_press_event(GtkWidget *w, GdkEvent *e) {
     gdk_event_get_keyval(e, &keyval);
     gdk_event_get_state (e, &state);
 
-    //printf("%d\n", keyval);
+    // printf("%d\n", keyval);
 
     if (keyval == 117) {  // "u"
         GtkTextIter start, end;
@@ -845,26 +844,28 @@ _Bool on_window1_key_press_event(GtkWidget *w, GdkEvent *e) {
         }
     }
 
-    //if ((state & GDK_CONTROL_MASK) == GDK_CONTROL_MASK && keyval == GDK_KEY_f) {
-    if (keyval == GDK_KEY_F2) {
-        on_mu_find_activate();
-        return TRUE;
+    // Toggle Word Wrapping (Ctrl-w)
+    if (keyval == GDK_KEY_w && (state & GDK_CONTROL_MASK)) {
+      if (gtk_text_view_get_wrap_mode (GTK_TEXT_VIEW(g_tview)) == GTK_WRAP_WORD) {
+        gtk_text_view_set_wrap_mode (GTK_TEXT_VIEW(g_tview), GTK_WRAP_NONE);
+      } else {
+        gtk_text_view_set_wrap_mode (GTK_TEXT_VIEW(g_tview), GTK_WRAP_WORD);
+      }
+      return TRUE;
     }
 
+    // display Search box (Ctrl-f)
+    if (keyval == GDK_KEY_f && (state & GDK_CONTROL_MASK)) {
+      on_mu_find_activate();
+      return TRUE;
+    }
+
+    // find next (F3)
     if (keyval == GDK_KEY_F3) {
-        search();
-        return TRUE;
+      search();
+      return TRUE;
     }
 
-    // Toggle Word Wrapping
-    if (keyval == GDK_KEY_F5) {
-        if (gtk_text_view_get_wrap_mode (GTK_TEXT_VIEW(g_tview)) == GTK_WRAP_WORD) {
-          gtk_text_view_set_wrap_mode (GTK_TEXT_VIEW(g_tview), GTK_WRAP_NONE);
-        } else {
-          gtk_text_view_set_wrap_mode (GTK_TEXT_VIEW(g_tview), GTK_WRAP_WORD);
-        }
-        return TRUE;
-    }
     return FALSE;
 }
 

@@ -22,15 +22,15 @@ Piccolo Features:
 
 | Keys  | Action |
 | :---- | :----- |
-| Ctrl-q | quit |
-| Ctrl-s | save |
-| Shift-Ctrl-s | save-as |
-| F2 | search |
-| F3 | next |
-| F5 | Word Wrap |
-| Ctrl-o | open |
-| Ctrl-n | new file |
-| "u" | launch selected URL |
+| Ctrl-q | __quit__ |
+| Ctrl-s | __save__ |
+| Shift-Ctrl-s | __save-as__ |
+| Ctrl-f | __search__ |
+| F3 | __next__ |
+| Ctrl-w | __Word Wrap__ |
+| Ctrl-o | __open__ |
+| Ctrl-n | __new file__ |
+| "u" | __launch selected URL__ |
 
 
 #### Debian & GTK
