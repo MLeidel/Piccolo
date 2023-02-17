@@ -1,4 +1,0 @@
-#!/bin/bash
-
-cp piccolo piccolo_1.5_amd64/usr/local/bin
-debbld piccolo piccolo_1.5_amd64
