@@ -7,8 +7,11 @@ Piccolo is a very minimal text editor intended for
 applications requiring a simple display of monospaced
 text or very simple editing.
 
-There are neither tabs nor multiple documents.  
+Does not support multiple documents.  
 There is no syntax highlighting.
+The font is fixed: normal 11pt 'JetBrains Mono'
+The tabs are set to 4 and TAB characters are inserted.
+
 
 Piccolo Features:
 
