@@ -27,7 +27,6 @@
 #include <time.h>
 #include <unistd.h>
 
-
 // DECLARATIONS
 
 char myc_quote_chars = '\"';    // if needed reset this variable
@@ -43,8 +42,10 @@ bool startswith(char*, char*);
 char* center(char*, char*, char*, int);
 char* chomp(char*);
 char* concat(char*, ...);
+char* decrypt(char*, char*, char*);
 char* deletechar(char*, char*, char*, size_t, size_t);
 char* dollar(char*, double, int, int);
+char* encrypt(char*, char*, char*);
 char* field(char*, char*, char, int, bool);
 char* insert(char*, char*, char*, size_t);
 char* insert_new(char*, char*, size_t);
@@ -58,11 +59,13 @@ char* replace_new (char*, char*, char*, size_t, size_t);
 char* rof(char*, char*, char*, int);
 char* rpad(char*, char*, char*, int);
 char* rtrim(char*);
+char* strcon(char*, char**, char*, int, int);
 char* strrev(char*);
 char* substr(char*, char*, int, int);
 char* trim(char*);
 char* uppercase(char*);
 char* urlencode(char*, char*);
+
 int between(char*, char*, char*, char*, int);
 int charat(char*, char);
 int contains(char*, char*);
@@ -105,7 +108,7 @@ typedef struct list {
     char** item;  // array of fields (char arrays or strings)
 } list;
 
-char* list_string(list, char*, char*);
+char* list_string(list, char*, char*, bool);
 list list_def(int, int);
 list list_dir(const char*, int, bool);
 list list_read(char*, bool);
@@ -123,6 +126,7 @@ void list_io(list, char*, char);
 // FILE & PATH FUNCTIONS
 
 bool file_exists (char*);
+bool isbinary(char*);
 FILE * open_for_append(char*);
 FILE * open_for_read(char*);
 FILE * open_for_write(char*);
@@ -130,6 +134,7 @@ long filesize(const char*);
 char* getbasename(char*, bool);
 char* getbasepath(char*, char*);
 char* getfullpath(char*, char*);
+char* getini(char*, char*, char*);
 int isfile(const char*);
 int pathsize(const char*, int);
 int readfile(char*, const char*);
@@ -150,6 +155,10 @@ long randnum(long, long);
 void isort(int[], int);
 void ssort(char*[], int, bool);
 void dsort(double[], int);
+
+// CLIPBOARD
+int cbcopy(char*);
+char* cbpaste(char*);
 
 // ZEN DIALOGS
 int zenmsg(char*, char*, char*);
@@ -186,8 +195,63 @@ void zentext(char* , char*, char*, bool);
 #define NEQ "!="
 #define NotEqual "!="
 
-//strtype
+// strtype
 enum styp {ALPHA, ALNUM, DIGIT, PRINT, SPACE, UPPER, LOWER, PUNCT};
+
+// colors for console printing
+struct Colors {
+    char dft[10];
+    char black[10];
+    char dark_red[10];
+    char dark_green[10];
+    char dark_yellow[10];
+    char dark_blue[10];
+    char dark_magenta[10];
+    char dark_cyan[10];
+    char light_gray[10];
+    char dark_gray[10];
+    char red[10];
+    char green[10];
+    char yellow[10];
+    char blue[10];
+    char magenta[10];
+    char cyan[10];
+    char white[10];
+};
+struct Colors clr_fg = {"\033[39m",
+                        "\033[30m",
+                        "\033[31m",
+                        "\033[32m",
+                        "\033[33m",
+                        "\033[34m",
+                        "\033[35m",
+                        "\033[36m",
+                        "\033[37m",
+                        "\033[90m",
+                        "\033[91m",
+                        "\033[92m",
+                        "\033[93m",
+                        "\033[94m",
+                        "\033[95m",
+                        "\033[96m",
+                        "\033[97m"};
+struct Colors clr_bg = {"\033[49m",
+                        "\033[40m",
+                        "\033[41m",
+                        "\033[42m",
+                        "\033[43m",
+                        "\033[44m",
+                        "\033[45m",
+                        "\033[46m",
+                        "\033[47m",
+                        "\033[100m",
+                        "\033[101m",
+                        "\033[102m",
+                        "\033[103m",
+                        "\033[104m",
+                        "\033[105m",
+                        "\033[106m",
+                        "\033[107m"};
 
 
 void errmsg(int rc, bool quit, char *msg, int line, char *filename) {
@@ -240,6 +304,33 @@ void ssort(char* arr[], int n, bool ignorecase) {
     else
         qsort(arr, n, sizeof(const char*), myssortcmp);
 }
+
+/*
+    clipboard
+    uses xclip
+*/
+
+int cbcopy(char *text) {
+    /* copies text to the system clipboard
+    usint xclip command */
+    char cmd[10240]; // 10K
+    int rc = 0;
+
+    sprintf(cmd, "echo \"%s\" | xclip -selection clipboard", text);
+    rc = system(cmd);
+    return rc;
+}
+
+char *cbpaste(char *text) {
+    /* pastes clipboard into text */
+    char cmd[64]; // 10K
+
+    strncpy(cmd, "xclip -o", 10);
+    runproc(text, cmd);
+    chomp(text);
+    return text;
+}
+
 
 /*
         STRINGS
@@ -372,6 +463,25 @@ char *rtrim(char *s) {
     while (isspace(*--back));
     *(back + 1) = '\0';
     return s;
+}
+
+
+char *strcon(   char *string,
+                char *arr[],
+                char *delim,
+                int arr_size,
+                int start) {
+    /* Combine and Return an array-of-strings into
+    one long string delimiting each string element by "delim"
+    see myc/string/strcon.c and myc/list/list_strcon.c */
+
+    for(int i = start; i < arr_size; i++) {
+        if (i == arr_size - 1)
+            strcat(string, arr[i]);
+        else
+            concat(string, arr[i], delim, END);
+    }
+    return string;
 }
 
 
@@ -562,6 +672,68 @@ int replacechar(char *a, char b, char c, size_t number) {
         p++;
     }
     return count;
+}
+
+/*
+   ======= Encryption functions ======== These functions use a
+   character value shift similar to a Ceasar Cipher. The difference
+   is that here each character has a different shift value which is
+   determined by a secret key consisting of a string of characters.
+   Part of the ascii value of each character in the key string is
+   used to shift a character in the plain text string. Only the
+   second digit of each ascii key character code is used for the
+   shift value which is added to the plain text character value.
+   After each character of the key has been applied it simply repeats
+   until all of the plain text has been coded.
+
+   NOTE: These functions only work on Plain Text Files, Not binary files.
+*/
+
+int getKeyShift(int inx, char *ckey) {
+    char skey[16];
+    char ck1;
+    int ck1n = 0;
+    sprintf(skey, "%d", ckey[inx]);  // make string of the int key code
+    ck1 = skey[1];  // take 2nd digit of the (numeric) string
+    ck1n = ck1 - '0';  // convert and return as int
+    if (ck1n == 0) ck1n = 3;  // many zeros with no shift value
+    return ck1n;
+}
+
+char *encrypt(char *etext, char *plain, char *key) {
+    char ch;
+    uint kix = 0;
+    uint klen = strlen(key) - 1;  // valid index bounds
+    uint ix = 0;
+    char cval = 'A';
+    uint plen = strlen(plain);
+    for(ix=0; ix < plen; ix++) {
+        ch = plain[ix];
+        cval = ch + getKeyShift(kix, key);
+        etext[ix] = cval;
+        kix++;
+        if (kix > klen) kix = 0;
+    }
+    etext[ix] = '\0';
+    return etext;
+}
+
+char *decrypt(char *plain, char *etext, char *key) {
+    char ch;
+    uint kix = 0;
+    uint klen = strlen(key) - 1;
+    uint ix = 0;
+    char cval;
+    uint elen = strlen(etext);
+    for(ix=0; ix < elen; ix++) {
+        ch = etext[ix];
+        cval = ch - getKeyShift(kix, key);
+        plain[ix] = cval;
+        kix++;
+        if (kix > klen) kix = 0;
+    }
+    plain[ix] = '\0';
+    return plain;
 }
 
 /*================= BEGIN "list" .. etc. ====================*/
@@ -804,7 +976,9 @@ void list_inject(list lst, char *value, int inx) {
     removes an item from the list at a
     designated index ...
     shifts list items up thus changing
-    some of the indexes
+    some of the indexes and creating
+    zero length strings in the last row(s)
+    BUT: list dimensions ARE NOT CHANGED.
 */
 void list_remove(list lst, int inx) {
     int x = 0;
@@ -830,10 +1004,12 @@ int list_find(list lst, char *str) {
     return -1;
 }
 
-/*
-    combines list items into a field delimited string
+/*  List to String
+    combines list items into a field delimited string;
+    May 2023 - added bool quote parameter and removal
+    of possible empty trailing list items.
 */
-char *list_string(list lst, char *str, char *delim) {
+char *list_string(list lst, char *str, char *delim, bool quote) {
     int x = 0;
     int has_comma, has_space, has_apost, has_quote;
     char separator[8] = {'\0'};
@@ -842,15 +1018,26 @@ char *list_string(list lst, char *str, char *delim) {
     strcpy(separator, delim);
     strcpy(str, "\0");
 
-    for (x=0; x < lst.nbr_rows; x++) {
-        if (x == lst.nbr_rows - 1)
+    // eliminate trailing empty rows
+    int new_rows = lst.nbr_rows;
+    x = lst.nbr_rows - 1;
+    while (strlen(lst.item[x]) == 0) {
+        new_rows--;
+        x--;
+    }
+    // now use "new_rows" instead of lst.nbr_rows
+    // to calculate the return conatenated string
+
+    for (x=0; x < new_rows; x++) {
+        if (x == new_rows - 1)
             strcpy(separator, "\0"); // no delim on last item
-        if (isnum_us(lst.item[x])) {
+        if (isnum_us(lst.item[x]) || !quote) {
             concat(str, lst.item[x], separator, END);
         } else {
             concat(str, "\"", lst.item[x], "\"", separator, END);
         }
         strcat(sbuf.value, str); // building the csv string
+        strcpy(str, "\0");  // clear for next item+delim
     }
     strcpy(str, sbuf.value);
     string_del(sbuf);
@@ -1035,6 +1222,25 @@ bool file_exists (char *filename) {
     return (stat (filename, &buffer) == 0);
 }
 
+bool isbinary(char *filename) {
+    FILE *file = fopen(filename, "r");
+    int ch;
+
+    if (file == NULL) {
+        printf("Error opening file: %s\n", filename);
+        exit(EXIT_FAILURE);
+    }
+
+    while ((ch = fgetc(file)) != EOF) {
+        if (ch == NULL) {
+            fclose(file);
+            return true;
+        }
+    }
+
+    fclose(file);
+    return false;
+}
 
 FILE * open_for_read(char *fname) {
     FILE *f1;
@@ -1156,6 +1362,34 @@ char *getbasepath(char *fn, char *buff) {
     }
     return buff;
 }
+
+char *getini(char *value, char *inifile, char *ininame) {
+    /*
+        Returns a named value from an ini file
+    */
+    int lines[2];
+    int inx=0;
+    int p=0;
+
+    list flst = list_read(inifile, true);
+
+    for(inx=0; inx < flst.nbr_rows; inx++) {
+        if (startswith(flst.item[inx], ininame)) {
+            p = indexof(flst.item[inx], "=");
+            substr(value, flst.item[inx], p+1, 0);
+            strncpy(value, trim(value), strlen(value));
+            list_del(flst);
+            return value;
+        }
+    }
+    if (inx >= flst.nbr_rows) {
+        printf("\nDid not find ini file key name %s\n", ininame);
+        list_display(flst);
+        list_del(flst);
+        exit(1);
+    }
+}
+
 
 void filecopy(char *src, char *dst) {
     FILE * source = open_for_read(src);
